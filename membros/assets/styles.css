@@ -801,9 +801,6 @@ html,body{max-width:100%;overflow-x:hidden;}
   justify-content:center;
   overflow:hidden;
 }
-}
-}
-}
 .fig:hover{transform:translateY(-3px);box-shadow:0 16px 30px -20px rgba(43,36,32,.3);}
 ..fig img{
   max-width:100%;
@@ -812,8 +809,6 @@ html,body{max-width:100%;overflow-x:hidden;}
   height:auto;
   object-fit:contain;
 }
-}
-};}
 .fig.esqueleto{
   background-image:linear-gradient(100deg,#F3E7E0 30%,#FAF2ED 50%,#F3E7E0 70%);
   background-size:220% 100%;animation:brilho 1.3s ease infinite;border-color:transparent;
