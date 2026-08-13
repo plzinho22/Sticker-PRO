@@ -802,7 +802,9 @@ html,body{max-width:100%;overflow-x:hidden;}
   width:auto;
   height:auto;
   object-fit:contain;
+  filter:brightness(1.2) contrast(1.2) saturate(1.1);
   mix-blend-mode:multiply;
+}
 };}
 .fig.esqueleto{
   background-image:linear-gradient(100deg,#F3E7E0 30%,#FAF2ED 50%,#F3E7E0 70%);
