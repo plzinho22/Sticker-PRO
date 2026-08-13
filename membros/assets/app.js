@@ -84,6 +84,7 @@
           nota: cat.nota || '',
           emoji: cat.emoji || s.emoji || '🎀',
           pasta: s.pasta,
+          linkLocal: cat.link || '',
           secao: chave,
           secaoTitulo: s.titulo
         });
@@ -105,6 +106,13 @@
 
   /* ---------------- componentes ---------------- */
 
+  /* Prioridade: link vindo do Supabase > link declarado no content.js.
+     Quando a categoria for cadastrada na tabela "colecoes", o link do
+     servidor assume sozinho, sem precisar mexer nesta lógica. */
+  function linkDaCategoria(item) {
+    return Dados.linkDe(item.id, item.pasta) || item.linkLocal || '';
+  }
+
   function topo(eyebrow, titulo, intro) {
     return '<header class="pagina-topo">' +
       '<span class="eyebrow">' + esc(eyebrow) + '</span>' +
@@ -114,7 +122,7 @@
   }
 
   function cardCategoria(item) {
-    var link = Dados.linkDe(item.id, item.pasta);
+    var link = linkDaCategoria(item);
     var capa = Dados.capa(item.id);
 
     var visual = capa
@@ -140,7 +148,7 @@
   /* Destaque principal, no espírito de uma página de entrega. */
   function destaquePrincipal() {
     var sec = C.secoes.premium;
-    var link = Dados.linkDe(sec.categorias[0].id, sec.pasta) || Dados.link(sec.pasta);
+    var link = Dados.link(sec.pasta);
     if (!link) return '';
 
     return '<section class="entrega">' +
@@ -154,7 +162,7 @@
 
   /* Lista de materiais, com selo de status real. */
   function linhaMaterial(item) {
-    var link = Dados.linkDe(item.id, item.pasta);
+    var link = linkDaCategoria(item);
     var selo = link
       ? '<span class="selo selo-ok">Liberado</span>'
       : '<span class="selo selo-espera">Em breve</span>';
@@ -219,7 +227,7 @@
         '<div class="busca">' +
           '<span class="busca-lupa" aria-hidden="true">🔎</span>' +
           '<input type="search" id="campo-busca" class="busca-campo" ' +
-                 'placeholder="Pesquise uma categoria..." autocomplete="off" ' +
+                 'placeholder="Pesquisar categoria..." autocomplete="off" ' +
                  'autocapitalize="none" spellcheck="false" aria-label="Pesquisar categoria" ' +
                  'value="' + esc(estado.busca) + '">' +
           (buscando ? '<button type="button" class="busca-limpar" id="btn-limpar-busca" aria-label="Limpar busca">×</button>' : '') +
@@ -233,8 +241,8 @@
         corpo =
           '<div class="vazio-busca">' +
             '<span class="vazio-emoji" aria-hidden="true">🔍</span>' +
-            '<p class="vazio-titulo">Não encontramos essa categoria.</p>' +
-            '<p class="vazio-dica">Experimente buscar por café, moda, viagem, beleza...</p>' +
+            '<p class="vazio-titulo">Nenhuma categoria encontrada.</p>' +
+            '<p class="vazio-dica">Tente outro termo, como academia, advocacia ou achadinhos.</p>' +
           '</div>';
       } else if (buscando) {
         var titulo = achados.length === 1 ? '1 categoria encontrada' : achados.length + ' categorias encontradas';
@@ -352,8 +360,8 @@
       alvo.innerHTML =
         '<div class="vazio-busca">' +
           '<span class="vazio-emoji" aria-hidden="true">🔍</span>' +
-          '<p class="vazio-titulo">Não encontramos essa categoria.</p>' +
-          '<p class="vazio-dica">Experimente buscar por café, moda, viagem, beleza...</p>' +
+          '<p class="vazio-titulo">Nenhuma categoria encontrada.</p>' +
+          '<p class="vazio-dica">Tente outro termo, como academia, advocacia ou achadinhos.</p>' +
         '</div>';
     } else if (!buscando) {
       // voltou ao estado sem busca: redesenha a página inteira

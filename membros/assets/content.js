@@ -21,17 +21,20 @@ window.STICKER_CONTEUDO = {
       chamada: 'Explore sua coleção Premium.',
       intro: 'Sua biblioteca principal. Toque em uma categoria para abrir a pasta e baixar o que quiser.',
       categorias: [
-        { id: 'lifestyle', nome: 'Lifestyle', nota: 'Dia a dia e bem-estar', emoji: '🎀' },
-        { id: 'rotina',    nome: 'Rotina',    nota: 'Manhã, treino, trabalho', emoji: '✨' },
-        { id: 'cafe',      nome: 'Café',      nota: 'Xícaras, padaria, café da manhã', emoji: '☕' },
-        { id: 'beleza',    nome: 'Beleza',    nota: 'Skincare, maquiagem, unhas', emoji: '💄' },
-        { id: 'moda',      nome: 'Moda',      nota: 'Looks, sapatos, acessórios', emoji: '👜' },
-        { id: 'frases',    nome: 'Frases',    nota: 'Textos prontos para aplicar', emoji: '💬' },
-        { id: 'feminino',  nome: 'Feminino',  nota: 'Flores, laços, corações', emoji: '🌸' },
-        { id: 'viagem',    nome: 'Viagem',    nota: 'Praia, avião, passeios', emoji: '✈️' },
-        { id: 'comida',    nome: 'Comida',    nota: 'Doces, frutas, receitas', emoji: '🍓' },
-        { id: 'estetica',  nome: 'Estética',  nota: 'Formas e texturas suaves', emoji: '🤍' },
-        { id: 'diversos',  nome: 'Diversos',  nota: 'Um pouco de tudo', emoji: '⭐' }
+        /* Para adicionar uma categoria, copie uma linha e troque os valores.
+           "link" é temporário: quando a categoria existir na tabela
+           "colecoes" do Supabase, o link do servidor tem prioridade
+           automática e este campo pode ficar vazio. */
+        { id: '3d',                 nome: '3D',                  nota: '', emoji: '✨',
+          link: 'https://drive.google.com/drive/folders/11zECq-JdLStPF3mBV6XX4OtpF7Bh5Uu3' },
+        { id: 'academia',           nome: 'Academia',            nota: '', emoji: '🏋️',
+          link: 'https://drive.google.com/drive/folders/17p5JXdPxk1znMm_FHJesQWGBXGNT9K0x' },
+        { id: 'sao-miguel-arcanjo', nome: 'São Miguel Arcanjo',  nota: '', emoji: '🕊️',
+          link: 'https://drive.google.com/drive/folders/1P-rvjjRHqbiGWlCSr5RVimrjBygUwZ0w' },
+        { id: 'achadinhos',         nome: 'Achadinhos',          nota: '', emoji: '🛍️',
+          link: 'https://drive.google.com/drive/folders/1xdw7ovu6bBZZSSp0vGYCH5qo8SGX0StT' },
+        { id: 'advocacia',          nome: 'Advocacia',           nota: '', emoji: '⚖️',
+          link: 'https://drive.google.com/drive/folders/1trovS8z0MYgotz_cPPZEuFPo2lWxpl7S' }
       ]
     },
 
