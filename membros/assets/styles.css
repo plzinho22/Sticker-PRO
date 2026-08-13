@@ -788,8 +788,10 @@ html,body{max-width:100%;overflow-x:hidden;}
   display:grid;gap:14px;
   grid-template-columns:repeat(auto-fill,minmax(150px,1fr));
 }
-.fig{
-  margin:0;background:#F5EDE7;border:1px solid rgba(234,217,206,.7);
+..fig{
+  margin:0;
+  background:#E3D2BF;
+  border:1px solid rgba(234,217,206,.7);
   border-radius:var(--radius-md);padding:12px;aspect-ratio:1/1;
   display:flex;align-items:center;justify-content:center;overflow:hidden;
   box-shadow:0 8px 20px -18px rgba(43,36,32,.22);
