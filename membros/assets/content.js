@@ -26,15 +26,18 @@ window.STICKER_CONTEUDO = {
            "colecoes" do Supabase, o link do servidor tem prioridade
            automática e este campo pode ficar vazio. */
         { id: '3d',                 nome: '3D',                  nota: '', emoji: '✨',
-          link: 'https://drive.google.com/drive/folders/11zECq-JdLStPF3mBV6XX4OtpF7Bh5Uu3' },
+          link: 'https://drive.google.com/drive/folders/11zECq-JdLStPF3mBV6XX4OtpF7Bh5Uu3?usp=drive_link' },
+        /* Categoria com galeria interna: em vez de abrir o Drive, abre uma
+           tela dentro da área lendo o Supabase Storage.
+           "bucket" e "pasta" diferenciam maiúsculas de minúsculas. */
         { id: 'academia',           nome: 'Academia',            nota: '', emoji: '🏋️',
-          link: 'https://drive.google.com/drive/folders/17p5JXdPxk1znMm_FHJesQWGBXGNT9K0x' },
+          galeria: { bucket: 'Figurinhas', pasta: 'Academia' } },
         { id: 'sao-miguel-arcanjo', nome: 'São Miguel Arcanjo',  nota: '', emoji: '🕊️',
-          link: 'https://drive.google.com/drive/folders/1P-rvjjRHqbiGWlCSr5RVimrjBygUwZ0w' },
+          link: 'https://drive.google.com/drive/folders/1P-rvjjRHqbiGWlCSr5RVimrjBygUwZ0w?usp=drive_link' },
         { id: 'achadinhos',         nome: 'Achadinhos',          nota: '', emoji: '🛍️',
-          link: 'https://drive.google.com/drive/folders/1xdw7ovu6bBZZSSp0vGYCH5qo8SGX0StT' },
+          link: 'https://drive.google.com/drive/folders/1xdw7ovu6bBZZSSp0vGYCH5qo8SGX0StT?usp=drive_link' },
         { id: 'advocacia',          nome: 'Advocacia',           nota: '', emoji: '⚖️',
-          link: 'https://drive.google.com/drive/folders/1trovS8z0MYgotz_cPPZEuFPo2lWxpl7S' }
+          link: 'https://drive.google.com/drive/folders/1trovS8z0MYgotz_cPPZEuFPo2lWxpl7S?usp=drive_link' }
       ]
     },
 

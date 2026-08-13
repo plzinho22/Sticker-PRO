@@ -33,7 +33,8 @@
   var estado = {
     email: null, autorizado: false,
     carregandoDados: false, erroDados: null,
-    busca: ''
+    busca: '',
+    galeria: { id: null, carregando: false, erro: null, itens: [] }
   };
 
   /* ---------------- utilidades ---------------- */
@@ -58,6 +59,16 @@
       if (valor === undefined) return localStorage.getItem(chave);
       localStorage.setItem(chave, valor);
     } catch (e) { return null; }
+  }
+
+  var PREFIXO_CATEGORIA = '#/categoria/';
+
+  /* Devolve o id da categoria quando a rota é de galeria. */
+  function idDaRotaGaleria() {
+    var h = window.location.hash || '';
+    if (h.indexOf(PREFIXO_CATEGORIA) !== 0) return null;
+    var id = h.slice(PREFIXO_CATEGORIA.length);
+    return id || null;
   }
 
   function rotaAtual() {
@@ -85,6 +96,10 @@
           emoji: cat.emoji || s.emoji || '🎀',
           pasta: s.pasta,
           linkLocal: cat.link || '',
+          galeria: cat.galeria || null,
+          // true quando a categoria É a pasta da seção (Figurinhas,
+          // Minimalistas, Ícones). Só nesse caso vale herdar o link da pasta.
+          ehPastaInteira: s.categorias.length === 1,
           secao: chave,
           secaoTitulo: s.titulo
         });
@@ -106,11 +121,21 @@
 
   /* ---------------- componentes ---------------- */
 
-  /* Prioridade: link vindo do Supabase > link declarado no content.js.
-     Quando a categoria for cadastrada na tabela "colecoes", o link do
-     servidor assume sozinho, sem precisar mexer nesta lógica. */
+  /* Ordem de prioridade, do mais específico para o mais genérico:
+       1. link da própria categoria no Supabase (chave = id da categoria)
+       2. link da própria categoria no content.js
+       3. link da pasta da seção — SÓ quando a categoria representa a
+          pasta inteira (Figurinhas, Minimalistas, Ícones)
+
+     O passo 3 não vale para as categorias do Premium: sem link próprio,
+     o card fica "Em breve" em vez de abrir a pasta geral errada.
+     Não usamos Dados.linkDe() aqui porque ele já embute o fallback
+     para a pasta da seção, o que inverteria os passos 2 e 3. */
   function linkDaCategoria(item) {
-    return Dados.linkDe(item.id, item.pasta) || item.linkLocal || '';
+    return Dados.link(item.id) ||
+           item.linkLocal ||
+           (item.ehPastaInteira ? Dados.link(item.pasta) : '') ||
+           '';
   }
 
   function topo(eyebrow, titulo, intro) {
@@ -129,17 +154,25 @@
       ? '<span class="cartao-capa"><img src="' + esc(capa) + '" alt="" loading="lazy" decoding="async"></span>'
       : '<span class="cartao-glifo" aria-hidden="true">' + esc(item.emoji) + '</span>';
 
-    var selo = link
+    var disponivel = !!(link || item.galeria);
+    var selo = disponivel
       ? '<span class="selo selo-ok">Liberado</span>'
       : '<span class="selo selo-espera">Em breve</span>';
+
+    var chamada = item.galeria
+      ? 'Ver figurinhas <span aria-hidden="true">→</span>'
+      : (link ? 'Abrir coleção <span aria-hidden="true">→</span>' : 'Aguardando liberação');
 
     var miolo =
       visual +
       '<span class="cartao-nome">' + esc(item.nome) + '</span>' +
       '<span class="cartao-nota">' + esc(item.nota) + '</span>' +
       selo +
-      '<span class="cartao-acao">' + (link ? 'Abrir coleção <span aria-hidden="true">→</span>' : 'Aguardando liberação') + '</span>';
+      '<span class="cartao-acao">' + chamada + '</span>';
 
+    if (item.galeria) {
+      return '<a class="cartao" href="#/categoria/' + esc(item.id) + '">' + miolo + '</a>';
+    }
     return link
       ? '<a class="cartao" href="' + esc(link) + '" target="_blank" rel="noopener noreferrer">' + miolo + '</a>'
       : '<div class="cartao vazio">' + miolo + '</div>';
@@ -335,9 +368,145 @@
     }
   };
 
+  /* ---------------------------------------------------------
+     GALERIA — Supabase Storage (bucket privado)
+     Usa o mesmo cliente autenticado do login: nenhuma chave nova,
+     nenhuma secret. Sem sessão válida o Storage recusa a listagem.
+     --------------------------------------------------------- */
+
+  var EXT_IMAGEM = /\.(png|jpe?g|webp|gif|svg|avif)$/i;
+  var VALIDADE_URL = 3600; // segundos
+
+  function clienteSupabase() {
+    return (Auth && typeof Auth.cliente === 'function') ? Auth.cliente() : null;
+  }
+
+  function itemPorId(id) {
+    var achados = catalogo().filter(function (i) { return i.id === id; });
+    return achados.length ? achados[0] : null;
+  }
+
+  function carregarGaleria(id) {
+    var item = itemPorId(id);
+    if (!item || !item.galeria) return;
+
+    estado.galeria = { id: id, carregando: true, erro: null, itens: [] };
+    render();
+
+    var sb = clienteSupabase();
+    if (!sb) {
+      estado.galeria = { id: id, carregando: false, erro: 'indisponivel', itens: [] };
+      return render();
+    }
+
+    var bucket = item.galeria.bucket;
+    var pasta  = item.galeria.pasta;
+
+    sb.storage.from(bucket)
+      .list(pasta, { limit: 200, sortBy: { column: 'name', order: 'asc' } })
+      .then(function (r) {
+        if (r.error) {
+          console.error('[Galeria] falha ao listar:', r.error);
+          throw r.error;
+        }
+        var arquivos = (r.data || []).filter(function (f) {
+          return f && f.name && EXT_IMAGEM.test(f.name);
+        });
+        if (!arquivos.length) {
+          estado.galeria = { id: id, carregando: false, erro: null, itens: [] };
+          return render();
+        }
+        var caminhos = arquivos.map(function (f) { return pasta + '/' + f.name; });
+
+        return sb.storage.from(bucket)
+          .createSignedUrls(caminhos, VALIDADE_URL)
+          .then(function (r2) {
+            if (r2.error) {
+              console.error('[Galeria] falha ao assinar URLs:', r2.error);
+              throw r2.error;
+            }
+            var itens = (r2.data || [])
+              .filter(function (u) { return u && (u.signedUrl || u.signedURL); })
+              .map(function (u) {
+                var caminho = u.path || '';
+                return {
+                  url: u.signedUrl || u.signedURL,
+                  nome: caminho.split('/').pop() || ''
+                };
+              });
+            estado.galeria = { id: id, carregando: false, erro: null, itens: itens };
+            render();
+          });
+      })
+      .catch(function () {
+        estado.galeria = { id: id, carregando: false, erro: 'falha', itens: [] };
+        render();
+      });
+  }
+
+  function telaGaleria(id) {
+    var item = itemPorId(id);
+    if (!item) {
+      window.location.hash = '#/inicio';
+      return '';
+    }
+
+    var g = estado.galeria;
+    var cabeca =
+      '<div class="galeria-topo">' +
+        '<a class="voltar" href="#/inicio"><span aria-hidden="true">←</span> Voltar</a>' +
+        '<h1 class="galeria-titulo">' +
+          '<span class="galeria-emoji" aria-hidden="true">' + esc(item.emoji) + '</span>' +
+          esc(item.nome) +
+        '</h1>' +
+      '</div>';
+
+    if (g.carregando || g.id !== id) {
+      var vazios = '';
+      for (var i = 0; i < 8; i++) vazios += '<div class="fig esqueleto"></div>';
+      return cabeca + '<div class="galeria-grade">' + vazios + '</div>';
+    }
+
+    if (g.erro) {
+      return cabeca +
+        '<div class="aviso aviso-erro galeria-aviso">' +
+          'Não foi possível carregar as figurinhas agora. ' +
+          '<button type="button" class="link-inline" id="btn-recarregar-galeria">Tentar de novo</button>' +
+        '</div>';
+    }
+
+    if (!g.itens.length) {
+      return cabeca +
+        '<div class="vazio-busca">' +
+          '<span class="vazio-emoji" aria-hidden="true">🖼️</span>' +
+          '<p class="vazio-titulo">Nenhuma figurinha por aqui ainda.</p>' +
+          '<p class="vazio-dica">Esta coleção está sendo preparada.</p>' +
+        '</div>';
+    }
+
+    var figuras = g.itens.map(function (f) {
+      return '<figure class="fig">' +
+        '<img src="' + esc(f.url) + '" alt="' + esc(f.nome) + '" loading="lazy" decoding="async">' +
+      '</figure>';
+    }).join('');
+
+    return cabeca + '<div class="galeria-grade">' + figuras + '</div>';
+  }
+
   /* ---------------- render ---------------- */
 
   function render() {
+    var idGaleria = idDaRotaGaleria();
+    if (idGaleria) {
+      el['conteudo'].innerHTML = '<div class="pagina entra">' + telaGaleria(idGaleria) + '</div>';
+      window.scrollTo(0, 0);
+      marcarAtivo('inicio');
+      var itemG = itemPorId(idGaleria);
+      document.title = (itemG ? itemG.nome : 'Coleção') + ' · Sticker Pro Premium';
+      ligarEventos();
+      return;
+    }
+
     var r = rotaAtual();
     if (!r) { window.location.hash = '#/inicio'; return; }
 
@@ -423,6 +592,14 @@
 
     var recarregar = document.getElementById('btn-recarregar');
     if (recarregar) recarregar.addEventListener('click', carregarDados);
+
+    var recarregarG = document.getElementById('btn-recarregar-galeria');
+    if (recarregarG) {
+      recarregarG.addEventListener('click', function () {
+        var id = idDaRotaGaleria();
+        if (id) carregarGaleria(id);
+      });
+    }
   }
 
   /* ---------------- navegação ---------------- */
@@ -519,7 +696,9 @@
     esconder(el['tela-redefinir']);
     esconder(el['tela-negado']);
     el['app'].classList.add('ativo');
-    if (!rotaAtual()) window.location.hash = '#/inicio';
+    var idGaleriaInicial = idDaRotaGaleria();
+    if (idGaleriaInicial) carregarGaleria(idGaleriaInicial);
+    else if (!rotaAtual()) window.location.hash = '#/inicio';
     else render();
     carregarDados();
     talvezBoasVindas();
@@ -528,6 +707,7 @@
   function abrirLogin() {
     estado.email = null;
     estado.autorizado = false;
+    estado.galeria = { id: null, carregando: false, erro: null, itens: [] };
     Dados.limpar();
     esconder(el['tela-negado']);
     el['app'].classList.remove('ativo');
@@ -671,6 +851,10 @@
     }
     if (!estado.email) return abrirLogin();
     if (!estado.autorizado) return;
+
+    var idGaleria = idDaRotaGaleria();
+    if (idGaleria && estado.galeria.id !== idGaleria) return carregarGaleria(idGaleria);
+
     render();
   });
 
