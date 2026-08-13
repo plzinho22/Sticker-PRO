@@ -66,9 +66,19 @@
     return null;
   }
 
-  function mostrar(no)  { if (no) no.style.display = ''; }
-  function esconder(no) { if (no) no.style.display = 'none'; }
+ function mostrar(no) {
+  if (!no) return;
 
+  no.classList.add('ativo');
+  no.style.display = '';
+}
+
+function esconder(no) {
+  if (!no) return;
+
+  no.classList.remove('ativo');
+  no.style.display = 'none';
+}
   /* ---------------------------------------------------------
      CATÁLOGO
      Lido direto de STICKER_CONTEUDO. Nenhuma segunda lista.
