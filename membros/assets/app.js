@@ -875,7 +875,7 @@
             );
           }
 
-          return Auth.usuario();
+          return Auth.sessao();
         })
         .then(function (usuario) {
 
@@ -977,7 +977,7 @@
         }
 
         Promise.resolve(
-          Auth.atualizarSenha(novaSenha)
+          Auth.definirSenha(novaSenha)
         )
         .then(function () {
 
@@ -986,7 +986,7 @@
               'Senha alterada com sucesso. Entrando...';
           }
 
-          return Auth.usuario();
+          return Auth.sessao();
 
         })
         .then(function (usuario) {
@@ -1095,7 +1095,7 @@
   function iniciarSessao() {
 
     return Promise.resolve(
-      Auth.usuario()
+      Auth.sessao()
     )
     .then(function (usuario) {
 
