@@ -801,6 +801,7 @@ html,body{max-width:100%;overflow-x:hidden;}
   overflow:hidden;
 }
 }
+}
 .fig:hover{transform:translateY(-3px);box-shadow:0 16px 30px -20px rgba(43,36,32,.3);}
 ..fig img{
   max-width:100%;
