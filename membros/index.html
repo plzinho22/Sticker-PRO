@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#FBF3ED">
+<title>Sticker Pro Premium · Área de membros</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,450;9..144,560;9..144,650&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+
+<!-- ============ SPLASH (enquanto a sessão é verificada) ============ -->
+<div class="splash" id="splash">
+  <div class="splash-marca">Sticker Pro ✨</div>
+  <span class="spinner spinner-grande" aria-label="Carregando"></span>
+</div>
+
+<!-- ============ LOGIN ============ -->
+<div class="login-tela" id="tela-login" style="display:none;">
+  <div class="login-cartao">
+    <div class="login-marca">Sticker Pro ✨</div>
+    <span class="login-selo">Área de membros</span>
+
+    <h1 class="login-titulo">Entre na sua conta</h1>
+    <p class="login-sub">Use o e-mail que você cadastrou na compra.</p>
+
+    <form id="form-login" novalidate>
+      <div class="campo">
+        <label for="email">E-mail</label>
+        <input type="email" id="email" name="email" autocomplete="email"
+               inputmode="email" autocapitalize="none" spellcheck="false"
+               placeholder="voce@email.com">
+      </div>
+
+      <div class="campo">
+        <label for="senha">Senha</label>
+        <input type="password" id="senha" name="senha" autocomplete="current-password"
+               placeholder="Sua senha">
+      </div>
+
+      <div id="retorno-login" aria-live="polite"></div>
+
+      <button class="btn btn-primary btn-block btn-entrar" type="submit" id="btn-entrar">Entrar</button>
+    </form>
+
+    <a class="login-link" href="#" id="link-recuperar">Esqueci minha senha</a>
+  </div>
+
+  <div class="selo-demo" id="selo-demo" style="display:none;"></div>
+</div>
+
+<!-- ============ REDEFINIR SENHA ============ -->
+<div class="login-tela" id="tela-redefinir" style="display:none;">
+  <div class="login-cartao">
+    <div class="login-marca">Sticker Pro ✨</div>
+    <h1 class="login-titulo">Criar nova senha</h1>
+    <p class="login-sub">Escolha uma senha com pelo menos 6 caracteres.</p>
+
+    <form id="form-redefinir" novalidate>
+      <div class="campo">
+        <label for="nova-senha">Nova senha</label>
+        <input type="password" id="nova-senha" autocomplete="new-password" placeholder="Nova senha">
+      </div>
+      <div id="retorno-redefinir" aria-live="polite"></div>
+      <button class="btn btn-primary btn-block btn-entrar" type="submit" id="btn-redefinir">Salvar nova senha</button>
+    </form>
+
+    <a class="login-link" href="#/">Voltar para o login</a>
+  </div>
+</div>
+
+<!-- ============ ACESSO NÃO LIBERADO ============ -->
+<div class="login-tela" id="tela-negado" style="display:none;">
+  <div class="login-cartao">
+    <div class="login-marca">Sticker Pro ✨</div>
+    <span class="login-selo">Área de membros</span>
+
+    <h1 class="login-titulo">Seu acesso ainda não está liberado.</h1>
+    <p class="login-sub" id="negado-msg">Não encontramos um acesso Premium ativo para esta conta.</p>
+
+    <div class="aviso aviso-info negado-aviso">
+      Se você acabou de realizar a compra, aguarde a confirmação do pagamento e tente novamente.
+    </div>
+
+    <p class="negado-conta">Conta: <span id="negado-email"></span></p>
+
+    <button class="btn btn-primary btn-block" type="button" id="btn-negado-tentar">Tentar novamente</button>
+    <button class="btn btn-ghost btn-block negado-sair" type="button" id="btn-negado-sair">Sair</button>
+  </div>
+</div>
+
+<!-- ============ TRAVA DE PUBLICAÇÃO (modo demonstração) ============ -->
+<div class="login-tela" id="tela-bloqueio" style="display:none;">
+  <div class="login-cartao">
+    <div class="login-marca">Sticker Pro ✨</div>
+    <span class="login-selo bloqueio-selo">Não configurado</span>
+
+    <h1 class="login-titulo">Área ainda não configurada.</h1>
+    <p class="login-sub">
+      Esta área está em modo demonstração, que não protege o conteúdo, e por isso
+      não abre em um endereço publicado.
+    </p>
+    <div class="aviso aviso-erro negado-aviso">
+      Configure <b>supabaseUrl</b> e <b>supabaseAnonKey</b> em <b>assets/config.js</b>
+      para liberar o acesso. Instruções em COMO-USAR.md.
+    </div>
+  </div>
+</div>
+
+<!-- ============ APP ============ -->
+<div class="app" id="app">
+
+  <header class="topbar">
+    <a class="topbar-marca" href="#/inicio">Sticker Pro <span aria-hidden="true">✨</span></a>
+    <span class="topbar-plano">Premium</span>
+    <nav class="nav" id="nav" aria-label="Menu principal"></nav>
+  </header>
+
+  <main class="conteudo" id="conteudo"></main>
+
+  <nav class="bottombar" aria-label="Menu">
+    <div class="bottombar-grade" id="tabs"></div>
+  </nav>
+</div>
+
+<!-- SDK do Supabase (login real ativado) -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<!-- Ordem obrigatória -->
+<script src="assets/config.js"></script>
+<script src="assets/content.js"></script>
+<script src="assets/auth.js"></script>
+<script src="assets/dados.js"></script>
+<script src="assets/app.js"></script>
+</body>
+</html>
