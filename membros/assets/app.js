@@ -33,8 +33,7 @@
   var estado = {
     email: null, autorizado: false,
     carregandoDados: false, erroDados: null,
-    busca: '',
-    galeria: { id: null, carregando: false, erro: null, itens: [] }
+    busca: ''
   };
 
   /* ---------------- utilidades ---------------- */
@@ -59,16 +58,6 @@
       if (valor === undefined) return localStorage.getItem(chave);
       localStorage.setItem(chave, valor);
     } catch (e) { return null; }
-  }
-
-  var PREFIXO_CATEGORIA = '#/categoria/';
-
-  /* Devolve o id da categoria quando a rota é de galeria. */
-  function idDaRotaGaleria() {
-    var h = window.location.hash || '';
-    if (h.indexOf(PREFIXO_CATEGORIA) !== 0) return null;
-    var id = h.slice(PREFIXO_CATEGORIA.length);
-    return id || null;
   }
 
   function rotaAtual() {
@@ -96,10 +85,6 @@
           emoji: cat.emoji || s.emoji || '🎀',
           pasta: s.pasta,
           linkLocal: cat.link || '',
-          galeria: cat.galeria || null,
-          // true quando a categoria É a pasta da seção (Figurinhas,
-          // Minimalistas, Ícones). Só nesse caso vale herdar o link da pasta.
-          ehPastaInteira: s.categorias.length === 1,
           secao: chave,
           secaoTitulo: s.titulo
         });
@@ -121,21 +106,11 @@
 
   /* ---------------- componentes ---------------- */
 
-  /* Ordem de prioridade, do mais específico para o mais genérico:
-       1. link da própria categoria no Supabase (chave = id da categoria)
-       2. link da própria categoria no content.js
-       3. link da pasta da seção — SÓ quando a categoria representa a
-          pasta inteira (Figurinhas, Minimalistas, Ícones)
-
-     O passo 3 não vale para as categorias do Premium: sem link próprio,
-     o card fica "Em breve" em vez de abrir a pasta geral errada.
-     Não usamos Dados.linkDe() aqui porque ele já embute o fallback
-     para a pasta da seção, o que inverteria os passos 2 e 3. */
+  /* Prioridade: link vindo do Supabase > link declarado no content.js.
+     Quando a categoria for cadastrada na tabela "colecoes", o link do
+     servidor assume sozinho, sem precisar mexer nesta lógica. */
   function linkDaCategoria(item) {
-    return Dados.link(item.id) ||
-           item.linkLocal ||
-           (item.ehPastaInteira ? Dados.link(item.pasta) : '') ||
-           '';
+    return Dados.linkDe(item.id, item.pasta) || item.linkLocal || '';
   }
 
   function topo(eyebrow, titulo, intro) {
@@ -147,36 +122,301 @@
   }
 
   function cardCategoria(item) {
-    var link = linkDaCategoria(item);
     var capa = Dados.capa(item.id);
 
     var visual = capa
       ? '<span class="cartao-capa"><img src="' + esc(capa) + '" alt="" loading="lazy" decoding="async"></span>'
       : '<span class="cartao-glifo" aria-hidden="true">' + esc(item.emoji) + '</span>';
 
-    var disponivel = !!(link || item.galeria);
-    var selo = disponivel
-      ? '<span class="selo selo-ok">Liberado</span>'
-      : '<span class="selo selo-espera">Em breve</span>';
-
-    var chamada = item.galeria
-      ? 'Ver figurinhas <span aria-hidden="true">→</span>'
-      : (link ? 'Abrir coleção <span aria-hidden="true">→</span>' : 'Aguardando liberação');
-
     var miolo =
       visual +
       '<span class="cartao-nome">' + esc(item.nome) + '</span>' +
       '<span class="cartao-nota">' + esc(item.nota) + '</span>' +
-      selo +
-      '<span class="cartao-acao">' + chamada + '</span>';
+      '<span class="selo selo-ok">Abrir coleção</span>' +
+      '<span class="cartao-acao">Ver figurinhas <span aria-hidden="true">→</span></span>';
 
-    if (item.galeria) {
-      return '<a class="cartao" href="#/categoria/' + esc(item.id) + '">' + miolo + '</a>';
-    }
-    return link
-      ? '<a class="cartao" href="' + esc(link) + '" target="_blank" rel="noopener noreferrer">' + miolo + '</a>'
-      : '<div class="cartao vazio">' + miolo + '</div>';
+    return '<button class="cartao" type="button" onclick="abrirColecao(\'' +
+      esc(item.id) +
+      '\')">' + miolo + '</button>';
   }
+
+  /* ==========================================================
+     GALERIA INTERNA — SUPABASE STORAGE
+     ========================================================== */
+
+  function abrirColecao(idCategoria) {
+    var itens = catalogo();
+
+    var item = itens.find(function (i) {
+      return i.id === idCategoria;
+    });
+
+    if (!item) {
+      console.error('[Galeria] Categoria não encontrada:', idCategoria);
+      return;
+    }
+
+    var pasta = item.pasta;
+
+    if (!pasta) {
+      console.error('[Galeria] Pasta não definida:', item.nome);
+      return;
+    }
+
+    var conteudo = el['conteudo'];
+
+    conteudo.innerHTML =
+      '<div class="pagina entra">' +
+        '<header class="pagina-topo">' +
+          '<button type="button" class="voltar" id="btn-voltar-galeria">← Voltar</button>' +
+          '<span class="eyebrow">' + esc(item.emoji || '✨') + '</span>' +
+          '<h1 class="pagina-titulo">' + esc(item.nome) + '</h1>' +
+          '<p class="pagina-intro">Escolha uma figurinha para usar no seu Story.</p>' +
+        '</header>' +
+        '<div id="galeria-status" class="aviso aviso-info">Carregando figurinhas…</div>' +
+        '<div id="galeria-conteudo"></div>' +
+      '</div>';
+
+    var voltar = document.getElementById('btn-voltar-galeria');
+
+    if (voltar) {
+      voltar.addEventListener('click', function () {
+        render();
+      });
+    }
+
+    carregarImagensStorage(pasta)
+      .then(function (imagens) {
+        var status = document.getElementById('galeria-status');
+        var galeria = document.getElementById('galeria-conteudo');
+
+        if (status) status.remove();
+
+        if (!imagens.length) {
+          if (galeria) {
+            galeria.innerHTML =
+              '<div class="aviso aviso-info">' +
+                'Nenhuma figurinha encontrada nesta coleção.' +
+              '</div>';
+          }
+          return;
+        }
+
+        if (galeria) {
+          galeria.innerHTML =
+            '<div class="galeria-grade">' +
+              imagens.map(function (imagem) {
+                return (
+                  '<figure class="fig">' +
+                    '<img src="' + esc(imagem) + '"' +
+                      ' alt="Figurinha"' +
+                      ' loading="lazy"' +
+                      ' decoding="async">' +
+                  '</figure>'
+                );
+              }).join('') +
+            '</div>';
+        }
+      })
+      .catch(function (erro) {
+        console.error('[Galeria] Erro ao carregar:', erro);
+
+        var status = document.getElementById('galeria-status');
+
+        if (status) {
+          status.className = 'aviso aviso-erro';
+          status.textContent =
+            'Não foi possível carregar as figurinhas. Tente novamente.';
+        }
+      });
+  }
+
+  function carregarImagensStorage(pasta) {
+    var CFG = window.STICKER_CONFIG || {};
+
+    if (!CFG.supabaseUrl || !CFG.supabaseAnonKey) {
+      return Promise.reject(new Error('Supabase não configurado.'));
+    }
+
+    return Promise.resolve(Auth.token()).then(function (token) {
+      if (!token) {
+        throw new Error('Sessão não encontrada.');
+      }
+
+      return listarPastaStorage(pasta, token);
+    });
+  }
+
+  /*
+     O Storage retorna arquivos e pastas.
+     Pastas vêm com id === null; arquivos possuem id.
+     Isso permite percorrer automaticamente todas as subpastas.
+  */
+  function listarPastaStorage(pasta, token, offset) {
+    var CFG = window.STICKER_CONFIG || {};
+    var limite = 1000;
+    var inicio = offset || 0;
+
+    var url =
+      CFG.supabaseUrl.replace(/\/+$/, '') +
+      '/storage/v1/object/list/Figurinhas';
+
+    return fetch(url, {
+      method: 'POST',
+      headers: {
+        apikey: CFG.supabaseAnonKey,
+        Authorization: 'Bearer ' + token,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        prefix: pasta.replace(/\/+$/, ''),
+        limit: limite,
+        offset: inicio,
+        sortBy: {
+          column: 'name',
+          order: 'asc'
+        }
+      })
+    })
+    .then(function (resp) {
+      if (!resp.ok) {
+        return resp.text().then(function (texto) {
+          throw new Error(
+            'Storage respondeu ' + resp.status + ': ' + texto
+          );
+        });
+      }
+
+      return resp.json();
+    })
+    .then(function (arquivos) {
+      arquivos = Array.isArray(arquivos) ? arquivos : [];
+
+      var imagens = [];
+      var subpastas = [];
+
+      arquivos.forEach(function (arquivo) {
+        if (!arquivo || !arquivo.name) return;
+
+        var caminho =
+          pasta.replace(/\/+$/, '') +
+          '/' +
+          arquivo.name;
+
+        if (arquivo.id === null) {
+          subpastas.push(caminho);
+          return;
+        }
+
+        if (/\.(png|jpe?g|webp|gif)$/i.test(arquivo.name)) {
+          imagens.push(caminho);
+        }
+      });
+
+      var proximaPagina =
+        arquivos.length === limite
+          ? listarPastaStorage(pasta, token, inicio + limite)
+          : Promise.resolve([]);
+
+      return Promise.all([
+        Promise.resolve(subpastas),
+        proximaPagina
+      ]);
+    })
+    .then(function (partes) {
+      var subpastas = partes[0];
+      var arquivosDaProximaPagina = partes[1];
+
+      return Promise.all(
+        subpastas.map(function (subpasta) {
+          return listarPastaStorage(subpasta, token);
+        })
+      ).then(function (resultadosSubpastas) {
+        var imagens = [];
+
+        resultadosSubpastas.forEach(function (resultado) {
+          imagens = imagens.concat(resultado);
+        });
+
+        imagens = imagens.concat(arquivosDaProximaPagina);
+
+        return imagens;
+      });
+    })
+    .then(function (imagens) {
+      imagens.sort(function (a, b) {
+        return a.localeCompare(b, 'pt-BR', {
+          numeric: true,
+          sensitivity: 'base'
+        });
+      });
+
+      return Promise.all(
+        imagens.map(function (caminho) {
+          return gerarUrlAssinada(caminho, token);
+        })
+      );
+    });
+  }
+
+  function gerarUrlAssinada(caminho, token) {
+    var CFG = window.STICKER_CONFIG || {};
+
+    var url =
+      CFG.supabaseUrl.replace(/\/+$/, '') +
+      '/storage/v1/object/sign/Figurinhas/' +
+      caminho
+        .split('/')
+        .map(function (parte) {
+          return encodeURIComponent(parte);
+        })
+        .join('/');
+
+    return fetch(url, {
+      method: 'POST',
+      headers: {
+        apikey: CFG.supabaseAnonKey,
+        Authorization: 'Bearer ' + token,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        expiresIn: 3600
+      })
+    })
+    .then(function (resp) {
+      if (!resp.ok) {
+        return resp.text().then(function (texto) {
+          throw new Error(
+            'Erro ao gerar URL assinada: ' +
+            resp.status +
+            ' ' +
+            texto
+          );
+        });
+      }
+
+      return resp.json();
+    })
+    .then(function (dados) {
+      if (!dados || !dados.signedURL) {
+        throw new Error(
+          'Supabase não retornou signedURL.'
+        );
+      }
+
+      if (dados.signedURL.indexOf('http') === 0) {
+        return dados.signedURL;
+      }
+
+      return (
+        CFG.supabaseUrl.replace(/\/+$/, '') +
+        '/storage/v1' +
+        dados.signedURL
+      );
+    });
+  }
+
+  window.abrirColecao = abrirColecao;
 
   /* Destaque principal, no espírito de uma página de entrega. */
   function destaquePrincipal() {
@@ -185,748 +425,737 @@
     if (!link) return '';
 
     return '<section class="entrega">' +
-      '<span class="entrega-glifo" aria-hidden="true">' + esc(sec.emoji) + '</span>' +
-      '<h2 class="entrega-titulo">' + esc(sec.titulo) + '</h2>' +
-      '<p class="entrega-texto">' + esc(sec.intro) + '</p>' +
-      '<a class="btn btn-primary entrega-btn" href="' + esc(link) + '" target="_blank" rel="noopener noreferrer">' +
-        '<span aria-hidden="true">↓</span> Abrir biblioteca completa</a>' +
+      '<span class="entrega-glifo" aria-hidden="true">' + esc(sec.emoji || '✨') + '</span>' +
+      '<div class="entrega-corpo">' +
+        '<span class="entrega-kicker">Seu acesso Premium</span>' +
+        '<h2>' + esc(sec.titulo || 'Figurinhas Premium') + '</h2>' +
+        '<p>' + esc(sec.descricao || 'Acesse sua coleção de figurinhas.') + '</p>' +
+        '<a class="btn btn-principal" href="' + esc(link) + '" target="_blank" rel="noopener noreferrer">Abrir coleção <span aria-hidden="true">→</span></a>' +
+      '</div>' +
     '</section>';
   }
 
-  /* Lista de materiais, com selo de status real. */
-  function linhaMaterial(item) {
-    var link = linkDaCategoria(item);
-    var selo = link
-      ? '<span class="selo selo-ok">Liberado</span>'
-      : '<span class="selo selo-espera">Em breve</span>';
-
-    var miolo =
-      '<span class="linha-emoji" aria-hidden="true">' + esc(item.emoji) + '</span>' +
-      '<span class="linha-txt">' +
-        '<span class="linha-nome">' + esc(item.nome) + '</span>' +
-        '<span class="linha-nota">' + esc(item.secaoTitulo) + '</span>' +
-      '</span>' + selo;
-
-    return link
-      ? '<a class="linha-material" href="' + esc(link) + '" target="_blank" rel="noopener noreferrer">' + miolo + '</a>'
-      : '<div class="linha-material vazio">' + miolo + '</div>';
+  function blocoBusca() {
+    return '<div class="busca-wrap">' +
+      '<label class="busca" for="campo-busca">' +
+        '<span aria-hidden="true">⌕</span>' +
+        '<input id="campo-busca" type="search" autocomplete="off" placeholder="Buscar figurinhas..." value="' + esc(estado.busca) + '">' +
+        '<button type="button" id="limpar-busca" aria-label="Limpar busca">×</button>' +
+      '</label>' +
+    '</div>';
   }
 
-  function esqueleto(n) {
-    var c = '';
-    for (var i = 0; i < n; i++) {
-      c += '<div class="cartao esqueleto">' +
-             '<span class="cartao-glifo"></span>' +
-             '<span class="barra"></span><span class="barra curta"></span>' +
-           '</div>';
+  function gradeCategorias(itens) {
+    if (!itens.length) {
+      return '<div class="vazio-busca">' +
+        '<span class="vazio-emoji" aria-hidden="true">🔎</span>' +
+        '<strong>Nada encontrado</strong>' +
+        '<span>Tente outro termo de busca.</span>' +
+      '</div>';
     }
-    return '<div class="grade">' + c + '</div>';
+
+    return '<div class="grade-categorias">' +
+      itens.map(cardCategoria).join('') +
+    '</div>';
   }
 
-  function avisoConteudo() {
-    if (estado.erroDados === 'sem-sessao') {
-      return '<div class="aviso aviso-erro">Sua sessão expirou. Entre novamente para ver suas coleções.</div>';
-    }
-    if (estado.erroDados === 'sem-acesso') {
-      return '<div class="aviso aviso-erro">Não encontramos um acesso Premium ativo para esta conta.</div>';
-    }
-    if (estado.erroDados === 'vazio') {
-      return '<div class="aviso aviso-info">Suas coleções ainda estão sendo preparadas. Volte em instantes.</div>';
-    }
-    if (estado.erroDados) {
-      return '<div class="aviso aviso-erro">Não foi possível carregar suas coleções agora. ' +
-             '<button type="button" class="link-inline" id="btn-recarregar">Tentar de novo</button></div>';
-    }
-    return '';
+  function paginaInicio() {
+    var todos = catalogo();
+    var filtrados = filtrar(todos, estado.busca);
+
+    return '<div class="pagina pagina-inicio">' +
+      '<header class="pagina-topo">' +
+        '<span class="eyebrow">✨ Biblioteca</span>' +
+        '<h1 class="pagina-titulo">Suas figurinhas</h1>' +
+        '<p class="pagina-intro">Escolha uma coleção ou pesquise pelo que você precisa.</p>' +
+      '</header>' +
+      blocoBusca() +
+      '<div class="resultado-busca">' +
+        '<span>' + (estado.busca ? filtrados.length + ' resultado(s)' : todos.length + ' coleções') + '</span>' +
+      '</div>' +
+      gradeCategorias(filtrados) +
+    '</div>';
   }
 
-  /* ---------------- telas ---------------- */
+  function paginaComoUsar() {
+    return '<div class="pagina">' +
+      topo('✨ Como usar', 'Como usar', 'É simples, rápido e feito para facilitar seus Stories.') +
+      '<div class="passos">' +
+        '<article class="passo">' +
+          '<span class="passo-numero">01</span>' +
+          '<h2>Escolha uma coleção</h2>' +
+          '<p>Abra uma das categorias disponíveis na sua biblioteca.</p>' +
+        '</article>' +
+        '<article class="passo">' +
+          '<span class="passo-numero">02</span>' +
+          '<h2>Escolha sua figurinha</h2>' +
+          '<p>Encontre a figurinha que combina com o seu Story.</p>' +
+        '</article>' +
+        '<article class="passo">' +
+          '<span class="passo-numero">03</span>' +
+          '<h2>Use no seu Story</h2>' +
+          '<p>Salve ou use a imagem no seu conteúdo.</p>' +
+        '</article>' +
+      '</div>' +
+    '</div>';
+  }
 
-  var telas = {
-
-    inicio: function () {
-      var itens = catalogo();
-      var achados = filtrar(itens, estado.busca);
-      var buscando = !!normalizar(estado.busca);
-
-      var cabecalho =
-        '<header class="biblioteca-topo">' +
-          '<span class="marca-linha">Sticker Pro <span aria-hidden="true">✨</span></span>' +
-          '<h1 class="biblioteca-titulo">Sua biblioteca Premium</h1>' +
-          '<p class="biblioteca-frase">Encontre a figurinha perfeita para deixar seu Story ainda mais bonito.</p>' +
-        '</header>';
-
-      var busca =
-        '<div class="busca">' +
-          '<span class="busca-lupa" aria-hidden="true">🔎</span>' +
-          '<input type="search" id="campo-busca" class="busca-campo" ' +
-                 'placeholder="Pesquisar categoria..." autocomplete="off" ' +
-                 'autocapitalize="none" spellcheck="false" aria-label="Pesquisar categoria" ' +
-                 'value="' + esc(estado.busca) + '">' +
-          (buscando ? '<button type="button" class="busca-limpar" id="btn-limpar-busca" aria-label="Limpar busca">×</button>' : '') +
-        '</div>';
-
-      var corpo;
-
-      if (estado.carregandoDados) {
-        corpo = '<h2 class="bloco-titulo secao-titulo">Suas coleções</h2>' + esqueleto(6);
-      } else if (!achados.length) {
-        corpo =
-          '<div class="vazio-busca">' +
-            '<span class="vazio-emoji" aria-hidden="true">🔍</span>' +
-            '<p class="vazio-titulo">Nenhuma categoria encontrada.</p>' +
-            '<p class="vazio-dica">Tente outro termo, como academia, advocacia ou achadinhos.</p>' +
-          '</div>';
-      } else if (buscando) {
-        var titulo = achados.length === 1 ? '1 categoria encontrada' : achados.length + ' categorias encontradas';
-        corpo = '<h2 class="bloco-titulo secao-titulo">' + esc(titulo) + '</h2>' +
-                '<div class="grade">' + achados.map(cardCategoria).join('') + '</div>';
-      } else {
-        // Sem busca: categorias do Premium em grade, demais coleções em lista.
-        var doPremium = achados.filter(function (i) { return i.secao === 'premium'; });
-        var outras    = achados.filter(function (i) { return i.secao !== 'premium'; });
-
-        corpo = '<h2 class="bloco-titulo secao-titulo">Suas coleções</h2>' +
-                '<div class="grade">' + doPremium.map(cardCategoria).join('') + '</div>';
-
-        if (outras.length) {
-          corpo += '<div class="materiais">' +
-                     '<h2 class="materiais-titulo"><span aria-hidden="true">🎁</span> Outras coleções</h2>' +
-                     outras.map(linhaMaterial).join('') +
-                   '</div>';
-        }
-      }
-
-      var fecho = buscando ? '' :
-        '<aside class="recado">' +
-          '<p>Toda a sua biblioteca fica aqui, sempre no mesmo lugar. Use a busca para achar a categoria que combina com o Story de hoje.</p>' +
-          '<p class="recado-forte">Bom proveito!</p>' +
-        '</aside>';
-
-      return cabecalho + busca + avisoConteudo() +
-             (buscando || estado.carregandoDados ? '' : destaquePrincipal()) +
-             '<section class="biblioteca">' + corpo + '</section>' + fecho;
-    },
-
-    comecar: function () {
-      var resumo =
-        '<ol class="resumo-passos">' +
-          '<li><span class="resumo-num">1</span>Escolha uma categoria.</li>' +
-          '<li><span class="resumo-num">2</span>Abra a coleção.</li>' +
-          '<li><span class="resumo-num">3</span>Baixe a figurinha.</li>' +
-          '<li><span class="resumo-num">4</span>Use no Story.</li>' +
-        '</ol>';
-
-      var etapas = C.etapas.map(function (e) {
-        var passos = e.passos.map(function (p) { return '<li>' + p + '</li>'; }).join('');
-        return '' +
-        '<article class="etapa" data-etapa>' +
-          '<button class="etapa-cabeca" type="button" data-abrir aria-expanded="false">' +
-            '<span class="etapa-num">' + esc(e.numero) + '</span>' +
-            '<span class="etapa-txt">' +
-              '<span class="etapa-nome">' + esc(e.titulo) + '</span>' +
-              '<span class="etapa-resumo">' + esc(e.resumo) + '</span>' +
-            '</span>' +
-            '<span class="etapa-seta" aria-hidden="true">▾</span>' +
-          '</button>' +
-          '<div class="etapa-corpo">' +
-            '<ol class="passos">' + passos + '</ol>' +
-            (e.dica ? '<p class="etapa-dica">💡 ' + esc(e.dica) + '</p>' : '') +
+  function paginaAcesso() {
+    return '<div class="pagina">' +
+      topo('🔑 Minha conta', 'Meu acesso', 'Confira os dados da sua assinatura.') +
+      '<section class="acesso-card">' +
+        '<div class="acesso-icone" aria-hidden="true">✓</div>' +
+        '<div class="acesso-dados">' +
+          '<div class="linha-acesso">' +
+            '<span class="linha-rotulo">Produto</span>' +
+            '<span class="linha-valor">Sticker Pro Premium</span>' +
           '</div>' +
-        '</article>';
-      }).join('');
-
-      return topo('Como usar', 'Comece aqui ✨', 'Em quatro passos você já está postando.') +
-             resumo +
-             '<h2 class="bloco-titulo secao-titulo">Passo a passo detalhado</h2>' +
-             etapas;
-    },
-
-    acesso: function () {
-      var suporte = CFG.emailSuporte
-        ? '<div class="linha-acesso"><span class="linha-rotulo">Suporte</span>' +
-          '<a class="linha-valor linha-link" href="mailto:' + esc(CFG.emailSuporte) + '">' + esc(CFG.emailSuporte) + '</a></div>'
-        : '';
-
-      return topo('Sua conta', 'Meu acesso 🔑', '') +
-      '<div class="cartao-acesso">' +
-        '<div class="linha-acesso">' +
-          '<span class="linha-rotulo">Plano</span>' +
-          '<span class="linha-valor">Sticker Pro Premium</span>' +
+          '<div class="linha-acesso">' +
+            '<span class="linha-rotulo">Status</span>' +
+            '<span class="tag-ok"><span class="bolinha"></span>Acesso ativo</span>' +
+          '</div>' +
+          '<div class="linha-acesso">' +
+            '<span class="linha-rotulo">E-mail</span>' +
+            '<span class="linha-valor linha-email">' + esc(estado.email || '—') + '</span>' +
+          '</div>' +
         '</div>' +
-        '<div class="linha-acesso">' +
-          '<span class="linha-rotulo">Status</span>' +
-          '<span class="tag-ok"><span class="bolinha"></span>Acesso ativo</span>' +
-        '</div>' +
-        '<div class="linha-acesso">' +
-          '<span class="linha-rotulo">E-mail</span>' +
-          '<span class="linha-valor linha-email">' + esc(estado.email || '—') + '</span>' +
-        '</div>' +
-        suporte +
-        '<button class="btn btn-ghost btn-block" id="btn-sair-conta" type="button">Sair</button>' +
-      '</div>';
-    }
-  };
-
-  /* ---------------------------------------------------------
-     GALERIA — Supabase Storage (bucket privado)
-     Usa o mesmo cliente autenticado do login: nenhuma chave nova,
-     nenhuma secret. Sem sessão válida o Storage recusa a listagem.
-     --------------------------------------------------------- */
-
-  var EXT_IMAGEM = /\.(png|jpe?g|webp|gif|svg|avif)$/i;
-  var VALIDADE_URL = 3600; // segundos
-
-  function clienteSupabase() {
-    return (Auth && typeof Auth.cliente === 'function') ? Auth.cliente() : null;
+      '</section>' +
+    '</div>';
   }
-
-  function itemPorId(id) {
-    var achados = catalogo().filter(function (i) { return i.id === id; });
-    return achados.length ? achados[0] : null;
-  }
-
-  function carregarGaleria(id) {
-    var item = itemPorId(id);
-    if (!item || !item.galeria) return;
-
-    estado.galeria = { id: id, carregando: true, erro: null, itens: [] };
-    render();
-
-    var sb = clienteSupabase();
-    if (!sb) {
-      estado.galeria = { id: id, carregando: false, erro: 'indisponivel', itens: [] };
-      return render();
-    }
-
-    var bucket = item.galeria.bucket;
-    var pasta  = item.galeria.pasta;
-
-    sb.storage.from(bucket)
-      .list(pasta, { limit: 200, sortBy: { column: 'name', order: 'asc' } })
-      .then(function (r) {
-        if (r.error) {
-          console.error('[Galeria] falha ao listar:', r.error);
-          throw r.error;
-        }
-        var arquivos = (r.data || []).filter(function (f) {
-          return f && f.name && EXT_IMAGEM.test(f.name);
-        });
-        if (!arquivos.length) {
-          estado.galeria = { id: id, carregando: false, erro: null, itens: [] };
-          return render();
-        }
-        var caminhos = arquivos.map(function (f) { return pasta + '/' + f.name; });
-
-        return sb.storage.from(bucket)
-          .createSignedUrls(caminhos, VALIDADE_URL)
-          .then(function (r2) {
-            if (r2.error) {
-              console.error('[Galeria] falha ao assinar URLs:', r2.error);
-              throw r2.error;
-            }
-            var itens = (r2.data || [])
-              .filter(function (u) { return u && (u.signedUrl || u.signedURL); })
-              .map(function (u) {
-                var caminho = u.path || '';
-                return {
-                  url: u.signedUrl || u.signedURL,
-                  nome: caminho.split('/').pop() || ''
-                };
-              });
-            estado.galeria = { id: id, carregando: false, erro: null, itens: itens };
-            render();
-          });
-      })
-      .catch(function () {
-        estado.galeria = { id: id, carregando: false, erro: 'falha', itens: [] };
-        render();
-      });
-  }
-
-  function telaGaleria(id) {
-    var item = itemPorId(id);
-    if (!item) {
-      window.location.hash = '#/inicio';
-      return '';
-    }
-
-    var g = estado.galeria;
-    var cabeca =
-      '<div class="galeria-topo">' +
-        '<a class="voltar" href="#/inicio"><span aria-hidden="true">←</span> Voltar</a>' +
-        '<h1 class="galeria-titulo">' +
-          '<span class="galeria-emoji" aria-hidden="true">' + esc(item.emoji) + '</span>' +
-          esc(item.nome) +
-        '</h1>' +
-      '</div>';
-
-    if (g.carregando || g.id !== id) {
-      var vazios = '';
-      for (var i = 0; i < 8; i++) vazios += '<div class="fig esqueleto"></div>';
-      return cabeca + '<div class="galeria-grade">' + vazios + '</div>';
-    }
-
-    if (g.erro) {
-      return cabeca +
-        '<div class="aviso aviso-erro galeria-aviso">' +
-          'Não foi possível carregar as figurinhas agora. ' +
-          '<button type="button" class="link-inline" id="btn-recarregar-galeria">Tentar de novo</button>' +
-        '</div>';
-    }
-
-    if (!g.itens.length) {
-      return cabeca +
-        '<div class="vazio-busca">' +
-          '<span class="vazio-emoji" aria-hidden="true">🖼️</span>' +
-          '<p class="vazio-titulo">Nenhuma figurinha por aqui ainda.</p>' +
-          '<p class="vazio-dica">Esta coleção está sendo preparada.</p>' +
-        '</div>';
-    }
-
-    var figuras = g.itens.map(function (f) {
-      return '<figure class="fig">' +
-        '<img src="' + esc(f.url) + '" alt="' + esc(f.nome) + '" loading="lazy" decoding="async">' +
-      '</figure>';
-    }).join('');
-
-    return cabeca + '<div class="galeria-grade">' + figuras + '</div>';
-  }
-
-  /* ---------------- render ---------------- */
 
   function render() {
-    var idGaleria = idDaRotaGaleria();
-    if (idGaleria) {
-      el['conteudo'].innerHTML = '<div class="pagina entra">' + telaGaleria(idGaleria) + '</div>';
-      window.scrollTo(0, 0);
-      marcarAtivo('inicio');
-      var itemG = itemPorId(idGaleria);
-      document.title = (itemG ? itemG.nome : 'Coleção') + ' · Sticker Pro Premium';
-      ligarEventos();
-      return;
-    }
+    var rota = rotaAtual() || ROTAS[0];
 
-    var r = rotaAtual();
-    if (!r) { window.location.hash = '#/inicio'; return; }
-
-    el['conteudo'].innerHTML = '<div class="pagina entra">' + telas[r.id]() + '</div>';
-    window.scrollTo(0, 0);
-    marcarAtivo(r.id);
-    document.title = r.nome + ' · Sticker Pro Premium';
-    ligarEventos();
-  }
-
-  /* Redesenha só a lista, sem recriar o campo (não perde o foco). */
-  function redesenharBusca() {
-    var alvo = el['conteudo'].querySelector('.biblioteca');
-    if (!alvo) return render();
-
-    var achados = filtrar(catalogo(), estado.busca);
-    var buscando = !!normalizar(estado.busca);
-
-    if (!achados.length) {
-      alvo.innerHTML =
-        '<div class="vazio-busca">' +
-          '<span class="vazio-emoji" aria-hidden="true">🔍</span>' +
-          '<p class="vazio-titulo">Nenhuma categoria encontrada.</p>' +
-          '<p class="vazio-dica">Tente outro termo, como academia, advocacia ou achadinhos.</p>' +
-        '</div>';
-    } else if (!buscando) {
-      // voltou ao estado sem busca: redesenha a página inteira
-      return render();
+    if (rota.id === 'comecar') {
+      el['conteudo'].innerHTML = paginaComoUsar();
+    } else if (rota.id === 'acesso') {
+      el['conteudo'].innerHTML = paginaAcesso();
     } else {
-      var titulo = achados.length === 1 ? '1 categoria encontrada' : achados.length + ' categorias encontradas';
-      alvo.innerHTML = '<h2 class="bloco-titulo secao-titulo">' + esc(titulo) + '</h2>' +
-                       '<div class="grade">' + achados.map(cardCategoria).join('') + '</div>';
+      el['conteudo'].innerHTML = paginaInicio();
+      prepararBusca();
     }
 
-    var limpar = document.getElementById('btn-limpar-busca');
-    if (buscando && !limpar) return render();
-    if (!buscando && limpar) limpar.parentNode.removeChild(limpar);
+    atualizarNav(rota.id);
   }
 
-  function focarBusca() {
-    var c = document.getElementById('campo-busca');
-    if (!c) return;
-    c.focus();
-    try { c.setSelectionRange(c.value.length, c.value.length); } catch (e) {}
+  function atualizarNav(ativo) {
+    if (!el['nav']) return;
+
+    var links = el['nav'].querySelectorAll('[data-rota]');
+
+    links.forEach(function (link) {
+      link.classList.toggle(
+        'ativo',
+        link.getAttribute('data-rota') === ativo
+      );
+    });
   }
 
-  function ligarEventos() {
+  function prepararBusca() {
     var campo = document.getElementById('campo-busca');
-    if (campo) {
-      campo.addEventListener('input', function () {
-        var tinha = !!normalizar(estado.busca);
-        estado.busca = campo.value;
-        var tem = !!normalizar(estado.busca);
-        // entrar ou sair do modo busca troca a estrutura da página
-        if (tinha !== tem) { render(); focarBusca(); return; }
-        redesenharBusca();
-      });
-      campo.addEventListener('keydown', function (ev) {
-        if (ev.key === 'Escape') { campo.value = ''; estado.busca = ''; redesenharBusca(); }
-      });
-    }
+    var limpar = document.getElementById('limpar-busca');
 
-    var limpar = document.getElementById('btn-limpar-busca');
+    if (!campo) return;
+
+    campo.addEventListener('input', function () {
+      estado.busca = campo.value;
+      render();
+
+      var novoCampo = document.getElementById('campo-busca');
+
+      if (novoCampo) {
+        novoCampo.focus();
+
+        try {
+          novoCampo.setSelectionRange(
+            novoCampo.value.length,
+            novoCampo.value.length
+          );
+        } catch (e) {}
+      }
+    });
+
     if (limpar) {
       limpar.addEventListener('click', function () {
         estado.busca = '';
         render();
-        var c = document.getElementById('campo-busca');
-        if (c) c.focus();
-      });
-    }
 
-    Array.prototype.forEach.call(el['conteudo'].querySelectorAll('[data-abrir]'), function (b) {
-      b.addEventListener('click', function () {
-        var art = b.closest('[data-etapa]');
-        var aberto = art.classList.toggle('aberta');
-        b.setAttribute('aria-expanded', aberto ? 'true' : 'false');
-      });
-    });
+        var novoCampo = document.getElementById('campo-busca');
 
-    var sair = document.getElementById('btn-sair-conta');
-    if (sair) sair.addEventListener('click', sairDaConta);
-
-    var recarregar = document.getElementById('btn-recarregar');
-    if (recarregar) recarregar.addEventListener('click', carregarDados);
-
-    var recarregarG = document.getElementById('btn-recarregar-galeria');
-    if (recarregarG) {
-      recarregarG.addEventListener('click', function () {
-        var id = idDaRotaGaleria();
-        if (id) carregarGaleria(id);
+        if (novoCampo) {
+          novoCampo.focus();
+        }
       });
     }
   }
-
-  /* ---------------- navegação ---------------- */
 
   function montarNav() {
-    el['nav'].innerHTML = ROTAS.map(function (r) {
-      return '<a class="nav-link" href="' + r.rota + '" data-id="' + r.id + '">' + esc(r.nome) + '</a>';
-    }).join('') + '<button class="nav-link nav-sair" type="button" id="btn-sair-topo">Sair</button>';
+    if (!el['nav']) return;
 
-    el['tabs'].innerHTML = ROTAS.map(function (r) {
-      return '<a class="tab" href="' + r.rota + '" data-id="' + r.id + '">' +
-        '<span class="emoji" aria-hidden="true">' + r.emoji + '</span>' + esc(r.nome) + '</a>';
-    }).join('');
+    el['nav'].innerHTML =
+      '<a href="#/inicio" data-rota="inicio">' +
+        '<span aria-hidden="true">⌂</span> Início' +
+      '</a>' +
+      '<a href="#/comecar" data-rota="comecar">' +
+        '<span aria-hidden="true">✦</span> Como usar' +
+      '</a>' +
+      '<a href="#/acesso" data-rota="acesso">' +
+        '<span aria-hidden="true">♙</span> Meu acesso' +
+      '</a>' +
+      '<button type="button" id="btn-sair-nav">' +
+        '<span aria-hidden="true">↪</span> Sair' +
+      '</button>';
 
-    var t = document.getElementById('btn-sair-topo');
-    if (t) t.addEventListener('click', sairDaConta);
-  }
+    var sair = document.getElementById('btn-sair-nav');
 
-  function marcarAtivo(id) {
-    ['.nav-link', '.tab'].forEach(function (sel) {
-      Array.prototype.forEach.call(document.querySelectorAll(sel), function (n) {
-        n.classList.toggle('ativo', n.getAttribute('data-id') === id);
-      });
-    });
-  }
-
-  /* ---------------- dados ---------------- */
-
-  function carregarDados() {
-    estado.carregandoDados = true;
-    estado.erroDados = null;
-    if (el['app'].classList.contains('ativo')) render();
-
-    return Promise.resolve(Dados.carregar()).then(function (r) {
-      estado.carregandoDados = false;
-      if (r && r.ok) estado.erroDados = r.vazio ? 'vazio' : null;
-      else estado.erroDados = (r && r.erro) || 'falha';
-      if (el['app'].classList.contains('ativo')) render();
-    }).catch(function (e) {
-      console.error('[Dados] falha inesperada:', e);
-      estado.carregandoDados = false;
-      estado.erroDados = 'falha';
-      if (el['app'].classList.contains('ativo')) render();
-    });
-  }
-
-  /* ---------------- sessão e guarda de rota ---------------- */
-
-  /* Sessão válida NÃO é autorização. Só o Supabase decide. */
-  function entrarComSessao(email) {
-    estado.email = email;
-    esconder(el['tela-login']);
-    esconder(el['tela-redefinir']);
-    esconder(el['tela-negado']);
-    mostrar(el['splash']);
-    el['splash'].style.display = 'flex';
-
-    return Promise.resolve(Dados.verificarAcesso()).then(function (r) {
-      if (r.estado === 'ok' || r.estado === 'demo') {
-        estado.autorizado = true;
-        return abrirApp(email);
-      }
-      if (r.estado === 'sem-sessao') return abrirLogin();
-      // 'sem-acesso' e 'erro' caem na tela amigável
-      estado.autorizado = false;
-      return abrirNegado(email, r.estado);
-    }).catch(function (e) {
-      console.error('[Acesso] falha ao verificar autorização:', e);
-      estado.autorizado = false;
-      abrirNegado(email, 'erro');
-    });
-  }
-
-  function abrirNegado(email, motivo) {
-    el['app'].classList.remove('ativo');
-    esconder(el['splash']);
-    esconder(el['tela-login']);
-    esconder(el['tela-redefinir']);
-    if (el['negado-email']) el['negado-email'].textContent = email || '';
-    var msg = document.getElementById('negado-msg');
-    if (msg) {
-      msg.textContent = motivo === 'erro'
-        ? 'Não conseguimos confirmar seu acesso agora. Tente novamente em alguns instantes.'
-        : 'Não encontramos um acesso Premium ativo para esta conta.';
+    if (sair) {
+      sair.addEventListener('click', sairDaConta);
     }
-    mostrar(el['tela-negado']);
-    el['tela-negado'].style.display = 'flex';
   }
 
-  function abrirApp(email) {
-    estado.email = email;
+  function mostrarApp() {
     esconder(el['splash']);
     esconder(el['tela-login']);
     esconder(el['tela-redefinir']);
     esconder(el['tela-negado']);
-    el['app'].classList.add('ativo');
-    var idGaleriaInicial = idDaRotaGaleria();
-    if (idGaleriaInicial) carregarGaleria(idGaleriaInicial);
-    else if (!rotaAtual()) window.location.hash = '#/inicio';
-    else render();
-    carregarDados();
-    talvezBoasVindas();
+    esconder(el['tela-bloqueio']);
+
+    mostrar(el['app']);
+
+    montarNav();
+    render();
   }
 
   function abrirLogin() {
-    estado.email = null;
-    estado.autorizado = false;
-    estado.galeria = { id: null, carregando: false, erro: null, itens: [] };
-    Dados.limpar();
-    esconder(el['tela-negado']);
-    el['app'].classList.remove('ativo');
     esconder(el['splash']);
+    esconder(el['app']);
     esconder(el['tela-redefinir']);
+    esconder(el['tela-negado']);
+    esconder(el['tela-bloqueio']);
+
     mostrar(el['tela-login']);
-    el['tela-login'].style.display = 'flex';
+
+    if (el['email']) {
+      el['email'].focus();
+    }
   }
 
-  function abrirRedefinir() {
-    el['app'].classList.remove('ativo');
+  function abrirNegado(email) {
     esconder(el['splash']);
+    esconder(el['app']);
     esconder(el['tela-login']);
-    mostrar(el['tela-redefinir']);
-    el['tela-redefinir'].style.display = 'flex';
+    esconder(el['tela-redefinir']);
+    esconder(el['tela-bloqueio']);
+
+    mostrar(el['tela-negado']);
+
+    if (el['negado-email']) {
+      el['negado-email'].textContent =
+        email || '';
+    }
+  }
+
+  function abrirBloqueio() {
+    esconder(el['splash']);
+    esconder(el['app']);
+    esconder(el['tela-login']);
+    esconder(el['tela-redefinir']);
+    esconder(el['tela-negado']);
+
+    mostrar(el['tela-bloqueio']);
+  }
+
+  function carregarDados() {
+    if (estado.carregandoDados) {
+      return Promise.resolve();
+    }
+
+    estado.carregandoDados = true;
+
+    return Dados.carregar()
+      .then(function (resultado) {
+
+        estado.carregandoDados = false;
+
+        if (!resultado || !resultado.ok) {
+          estado.erroDados =
+            resultado && resultado.erro
+              ? resultado.erro
+              : 'erro';
+
+          console.error(
+            '[Dados] não foi possível carregar:',
+            estado.erroDados
+          );
+
+          return false;
+        }
+
+        estado.erroDados = null;
+
+        return true;
+      })
+      .catch(function (erro) {
+
+        estado.carregandoDados = false;
+        estado.erroDados = 'erro';
+
+        console.error(
+          '[Dados] falha:',
+          erro
+        );
+
+        return false;
+      });
+  }
+
+  function entrarComSessao(email) {
+    estado.email = email || null;
+
+    return Dados.verificarAcesso()
+      .then(function (acesso) {
+
+        if (!acesso) {
+          abrirNegado(email);
+          return;
+        }
+
+        if (acesso.estado === 'ok') {
+          estado.autorizado = true;
+
+          return carregarDados()
+            .then(function () {
+
+              mostrarApp();
+
+              talvezBoasVindas();
+
+            });
+
+        }
+
+        if (acesso.estado === 'demo') {
+          estado.autorizado = true;
+
+          return carregarDados()
+            .then(function () {
+              mostrarApp();
+              talvezBoasVindas();
+            });
+        }
+
+        if (
+          acesso.estado === 'sem-acesso' ||
+          acesso.estado === 'sem-sessao'
+        ) {
+          estado.autorizado = false;
+          abrirNegado(email);
+          return;
+        }
+
+        abrirBloqueio();
+      })
+      .catch(function (erro) {
+
+        console.error(
+          '[Auth] falha ao verificar acesso:',
+          erro
+        );
+
+        abrirBloqueio();
+      });
+  }
+
+  function talvezBoasVindas() {
+    var chave = 'stickerpro_boasvindas_v1';
+
+    if (memoria(chave)) {
+      return;
+    }
+
+    memoria(chave, '1');
+
+    var modal = document.getElementById('modal-boas-vindas');
+
+    if (!modal) {
+      return;
+    }
+
+    modal.style.display = '';
+
+    var fechar = modal.querySelector(
+      '[data-fechar-boas-vindas]'
+    );
+
+    if (fechar) {
+      fechar.addEventListener('click', function () {
+        modal.style.display = 'none';
+      });
+    }
   }
 
   function sairDaConta() {
-    Promise.resolve(Auth.sair()).then(function () {
-      window.location.hash = '';
-      abrirLogin();
-    }).catch(function (e) {
-      console.error('[Auth] falha ao sair:', e);
-      abrirLogin();
-    });
-  }
+    Promise.resolve(
+      Auth.sair ? Auth.sair() : null
+    )
+    .catch(function (erro) {
+      console.error(
+        '[Auth] erro ao sair:',
+        erro
+      );
+    })
+    .then(function () {
 
+      estado.email = null;
+      estado.autorizado = false;
+      estado.busca = '';
 
-  function talvezBoasVindas() {
-    if (memoria('stickerpro:boasvindas') === 'ok') return;
-    var fundo = document.createElement('div');
-    fundo.className = 'modal-fundo';
-    fundo.innerHTML =
-      '<div class="modal" role="dialog" aria-modal="true">' +
-        '<div class="modal-emoji" aria-hidden="true">✨</div>' +
-        '<h2>Seu acesso está liberado!</h2>' +
-        '<p>Bem-vinda ao Sticker Pro Premium.</p>' +
-        '<p class="modal-p2">Sua biblioteca já está aqui. Use a busca para achar a categoria que quiser.</p>' +
-        '<button class="btn btn-primary btn-block" type="button" id="btn-comecar-agora">Ver minhas coleções</button>' +
-        '<a class="modal-depois" href="#/comecar" id="btn-depois">Ver como usar</a>' +
-      '</div>';
-    function fechar() {
-      memoria('stickerpro:boasvindas', 'ok');
-      if (fundo.parentNode) document.body.removeChild(fundo);
-    }
-    document.body.appendChild(fundo);
-    var a = document.getElementById('btn-comecar-agora');
-    var b = document.getElementById('btn-depois');
-    if (a) a.addEventListener('click', fechar);
-    if (b) b.addEventListener('click', fechar);
-    fundo.addEventListener('click', function (ev) { if (ev.target === fundo) fechar(); });
-  }
-
-  /* ---------------- formulários ---------------- */
-
-  function retorno(campo, tipo, texto) {
-    el[campo].innerHTML = texto ? '<div class="aviso aviso-' + tipo + '">' + esc(texto) + '</div>' : '';
-  }
-
-  function ocupado(botao, sim, rotulo) {
-    botao.disabled = sim;
-    botao.classList.toggle('carregando', sim);
-    botao.innerHTML = sim
-      ? '<span class="spinner" aria-hidden="true"></span>' + rotulo[1]
-      : rotulo[0];
-  }
-
-  el['form-login'].addEventListener('submit', function (ev) {
-    ev.preventDefault();
-    var email = el['email'].value.trim();
-    var senha = el['senha'].value;
-    retorno('retorno-login', '', '');
-
-    if (!email) { el['email'].focus(); return retorno('retorno-login', 'erro', 'Digite seu e-mail.'); }
-    if (!senha) { el['senha'].focus(); return retorno('retorno-login', 'erro', 'Digite sua senha.'); }
-
-    ocupado(el['btn-entrar'], true, ['Entrar', 'Entrando…']);
-
-    Promise.resolve(Auth.entrar(email, senha)).then(function (r) {
-      ocupado(el['btn-entrar'], false, ['Entrar', 'Entrando…']);
-      if (!r.ok) return retorno('retorno-login', 'erro', r.erro || 'Não foi possível entrar.');
-      window.location.hash = '#/inicio';
-      entrarComSessao(email);
-    }).catch(function (e) {
-      console.error('[Auth] falha ao entrar:', e);
-      ocupado(el['btn-entrar'], false, ['Entrar', 'Entrando…']);
-      retorno('retorno-login', 'erro', 'Não foi possível entrar agora. Verifique sua conexão e tente novamente.');
-    });
-  });
-
-  el['link-recuperar'].addEventListener('click', function (ev) {
-    ev.preventDefault();
-    var email = el['email'].value.trim();
-    if (!email) {
-      el['email'].focus();
-      return retorno('retorno-login', 'info', 'Digite o e-mail da sua compra e toque de novo em "Esqueci minha senha".');
-    }
-    retorno('retorno-login', 'info', 'Enviando…');
-    Promise.resolve(Auth.recuperarSenha(email)).then(function (r) {
-      if (!r.ok) return retorno('retorno-login', 'erro', r.erro || 'Não foi possível enviar agora.');
-      retorno('retorno-login', 'ok', r.aviso || 'Se este e-mail tiver acesso, você vai receber as instruções em instantes.');
-    }).catch(function (e) {
-      console.error('[Auth] falha ao recuperar senha:', e);
-      retorno('retorno-login', 'erro', 'Não foi possível enviar agora. Tente novamente.');
-    });
-  });
-
-  if (el['form-redefinir']) {
-    el['form-redefinir'].addEventListener('submit', function (ev) {
-      ev.preventDefault();
-      var nova = el['nova-senha'].value;
-      retorno('retorno-redefinir', '', '');
-      if (!nova || nova.length < 6) {
-        return retorno('retorno-redefinir', 'erro', 'A nova senha precisa ter pelo menos 6 caracteres.');
+      if (Dados.limpar) {
+        Dados.limpar();
       }
-      ocupado(el['btn-redefinir'], true, ['Salvar nova senha', 'Salvando…']);
-      Promise.resolve(Auth.definirSenha(nova)).then(function (r) {
-        ocupado(el['btn-redefinir'], false, ['Salvar nova senha', 'Salvando…']);
-        if (!r.ok) return retorno('retorno-redefinir', 'erro', r.erro);
-        retorno('retorno-redefinir', 'ok', 'Senha alterada. Entrando…');
-        Promise.resolve(Auth.sessao()).then(function (s) {
-          window.location.hash = '#/inicio';
-          if (s && s.email) entrarComSessao(s.email); else abrirLogin();
-        });
-      }).catch(function (e) {
-        console.error('[Auth] falha ao definir senha:', e);
-        ocupado(el['btn-redefinir'], false, ['Salvar nova senha', 'Salvando…']);
-        retorno('retorno-redefinir', 'erro', 'Não foi possível salvar agora. Peça um novo link.');
-      });
+
+      abrirLogin();
     });
   }
 
-  /* ---------------- inicialização ---------------- */
-
-  // Guarda de rota: sem sessão ou sem autorização, nada é renderizado.
-  window.addEventListener('hashchange', function () {
-    if (window.location.hash === '#/redefinir') return abrirRedefinir();
-    if (ROTAS_ANTIGAS.indexOf(window.location.hash) > -1) {
-      window.location.hash = '#/inicio';
+  function iniciarLogin() {
+    if (!el['form-login']) {
       return;
     }
-    if (!estado.email) return abrirLogin();
-    if (!estado.autorizado) return;
 
-    var idGaleria = idDaRotaGaleria();
-    if (idGaleria && estado.galeria.id !== idGaleria) return carregarGaleria(idGaleria);
+    el['form-login'].addEventListener(
+      'submit',
+      function (evento) {
 
-    render();
-  });
+        evento.preventDefault();
 
-  /* ---------------------------------------------------------
-     TRAVA DE PUBLICAÇÃO
-     Modo demonstração não verifica nada de verdade. Se ele
-     estiver ativo em domínio publicado, a área não abre.
-     --------------------------------------------------------- */
-  function ambienteLocal() {
-    var h = window.location.hostname || '';
-    return h === 'localhost' || h === '127.0.0.1' || h === '' ||
-           h === '::1' || /\.local$/.test(h) || window.location.protocol === 'file:';
+        var email =
+          el['email']
+            ? el['email'].value.trim()
+            : '';
+
+        var senha =
+          el['senha']
+            ? el['senha'].value
+            : '';
+
+        if (!email || !senha) {
+          if (el['retorno-login']) {
+            el['retorno-login'].textContent =
+              'Preencha e-mail e senha.';
+          }
+
+          return;
+        }
+
+        if (el['btn-entrar']) {
+          el['btn-entrar'].disabled = true;
+        }
+
+        if (el['retorno-login']) {
+          el['retorno-login'].textContent =
+            'Entrando...';
+        }
+
+        Promise.resolve(
+          Auth.entrar(email, senha)
+        )
+        .then(function (resultado) {
+
+          if (
+            !resultado ||
+            resultado.ok === false
+          ) {
+
+            throw new Error(
+              resultado &&
+              resultado.erro
+                ? resultado.erro
+                : 'Não foi possível entrar.'
+            );
+          }
+
+          return Auth.usuario();
+        })
+        .then(function (usuario) {
+
+          var emailUsuario =
+            usuario &&
+            usuario.email
+              ? usuario.email
+              : email;
+
+          return entrarComSessao(
+            emailUsuario
+          );
+
+        })
+        .catch(function (erro) {
+
+          console.error(
+            '[Login] erro:',
+            erro
+          );
+
+          if (el['retorno-login']) {
+            el['retorno-login'].textContent =
+              erro.message ||
+              'E-mail ou senha incorretos.';
+          }
+
+        })
+        .finally(function () {
+
+          if (el['btn-entrar']) {
+            el['btn-entrar'].disabled = false;
+          }
+
+        });
+      }
+    );
   }
 
-  function demoInseguroEmProducao() {
-    return Auth.modo() === 'demo' && CFG.travarDemoEmProducao !== false && !ambienteLocal();
-  }
-
-  if (demoInseguroEmProducao()) {
-    esconder(el['splash']);
-    esconder(el['tela-login']);
-    if (el['tela-bloqueio']) {
-      mostrar(el['tela-bloqueio']);
-      el['tela-bloqueio'].style.display = 'flex';
+  function iniciarRecuperacao() {
+    if (!el['link-recuperar']) {
+      return;
     }
-    console.error('[Sticker Pro] Área bloqueada: modo demonstração em domínio publicado. ' +
-                  'Configure supabaseUrl e supabaseAnonKey em config.js.');
-    return;
+
+    el['link-recuperar'].addEventListener(
+      'click',
+      function (evento) {
+
+        evento.preventDefault();
+
+        esconder(el['tela-login']);
+        mostrar(el['tela-redefinir']);
+
+        if (el['retorno-redefinir']) {
+          el['retorno-redefinir'].textContent = '';
+        }
+
+        if (el['nova-senha']) {
+          el['nova-senha'].value = '';
+        }
+
+      }
+    );
   }
 
+  function iniciarRedefinicao() {
+    if (!el['form-redefinir']) {
+      return;
+    }
 
-  montarNav();
+    el['form-redefinir'].addEventListener(
+      'submit',
+      function (evento) {
 
-  if (el['btn-sair-sidebar']) el['btn-sair-sidebar'].addEventListener('click', sairDaConta);
+        evento.preventDefault();
 
-  if (el['btn-negado-sair']) el['btn-negado-sair'].addEventListener('click', sairDaConta);
-  if (el['btn-negado-tentar']) {
-    el['btn-negado-tentar'].addEventListener('click', function () {
-      if (estado.email) entrarComSessao(estado.email);
-      else abrirLogin();
+        var novaSenha =
+          el['nova-senha']
+            ? el['nova-senha'].value
+            : '';
+
+        if (!novaSenha || novaSenha.length < 6) {
+
+          if (el['retorno-redefinir']) {
+            el['retorno-redefinir'].textContent =
+              'A senha precisa ter pelo menos 6 caracteres.';
+          }
+
+          return;
+        }
+
+        if (el['btn-redefinir']) {
+          el['btn-redefinir'].disabled = true;
+        }
+
+        if (el['retorno-redefinir']) {
+          el['retorno-redefinir'].textContent =
+            'Salvando nova senha...';
+        }
+
+        Promise.resolve(
+          Auth.atualizarSenha(novaSenha)
+        )
+        .then(function () {
+
+          if (el['retorno-redefinir']) {
+            el['retorno-redefinir'].textContent =
+              'Senha alterada com sucesso. Entrando...';
+          }
+
+          return Auth.usuario();
+
+        })
+        .then(function (usuario) {
+
+          var email =
+            usuario &&
+            usuario.email
+              ? usuario.email
+              : '';
+
+          return entrarComSessao(email);
+
+        })
+        .catch(function (erro) {
+
+          console.error(
+            '[Redefinição] erro:',
+            erro
+          );
+
+          if (el['retorno-redefinir']) {
+            el['retorno-redefinir'].textContent =
+              erro.message ||
+              'Não foi possível alterar a senha.';
+          }
+
+        })
+        .finally(function () {
+
+          if (el['btn-redefinir']) {
+            el['btn-redefinir'].disabled = false;
+          }
+
+        });
+      }
+    );
+  }
+
+  function iniciarBotoesNegado() {
+
+    if (el['btn-negado-sair']) {
+      el['btn-negado-sair'].addEventListener(
+        'click',
+        sairDaConta
+      );
+    }
+
+    if (el['btn-negado-tentar']) {
+      el['btn-negado-tentar'].addEventListener(
+        'click',
+        function () {
+
+          esconder(el['tela-negado']);
+          abrirLogin();
+
+        }
+      );
+    }
+
+  }
+
+  function iniciarRotas() {
+
+    window.addEventListener(
+      'hashchange',
+      function () {
+
+        if (!estado.autorizado) {
+          return;
+        }
+
+        var h =
+          window.location.hash;
+
+        if (
+          ROTAS_ANTIGAS.indexOf(h) > -1
+        ) {
+
+          window.location.hash =
+            '#/inicio';
+
+          return;
+        }
+
+        render();
+
+      }
+    );
+
+  }
+
+  function iniciarSairSidebar() {
+
+    if (!el['btn-sair-sidebar']) {
+      return;
+    }
+
+    el['btn-sair-sidebar']
+      .addEventListener(
+        'click',
+        sairDaConta
+      );
+
+  }
+
+  function iniciarSessao() {
+
+    return Promise.resolve(
+      Auth.usuario()
+    )
+    .then(function (usuario) {
+
+      if (!usuario) {
+        abrirLogin();
+        return;
+      }
+
+      estado.email =
+        usuario.email || null;
+
+      return entrarComSessao(
+        estado.email
+      );
+
+    })
+    .catch(function (erro) {
+
+      console.error(
+        '[Auth] erro ao recuperar sessão:',
+        erro
+      );
+
+      abrirLogin();
+
     });
+
   }
 
-  if (Auth.modo() === 'demo') {
-    el['selo-demo'].textContent = 'Modo demonstração — o login ainda não protege o conteúdo';
-    el['selo-demo'].style.display = 'block';
-  }
+  function iniciar() {
 
-  // Login/logout em outra aba reflete aqui.
-  if (Auth.aoMudar) {
-    Auth.aoMudar(function (evento, sessao) {
-      if (evento === 'PASSWORD_RECOVERY') return abrirRedefinir();
-      if (evento === 'SIGNED_OUT') return abrirLogin();
-      if (sessao && sessao.email && !estado.email) entrarComSessao(sessao.email);
+    iniciarLogin();
+    iniciarRecuperacao();
+    iniciarRedefinicao();
+    iniciarBotoesNegado();
+    iniciarRotas();
+    iniciarSairSidebar();
+
+    Promise.resolve(
+      carregarDados()
+    )
+    .then(function () {
+      return iniciarSessao();
+    })
+    .catch(function (erro) {
+
+      console.error(
+        '[Sticker Pro] erro ao iniciar:',
+        erro
+      );
+
+      abrirLogin();
+
     });
+
   }
 
-  /* A cliente chegou pelo link de redefinir senha?
-     Com PKCE o Supabase devolve ?code=... na query. */
-  function chegouPorRecuperacao() {
-    var q = window.location.search || '';
-    return window.location.hash === '#/redefinir' ||
-           q.indexOf('code=') > -1 ||
-           q.indexOf('type=recovery') > -1;
-  }
+  document.addEventListener(
+    'DOMContentLoaded',
+    iniciar
+  );
 
-  Promise.resolve(Auth.sessao()).then(function (s) {
-    if (chegouPorRecuperacao()) return abrirRedefinir();
-    if (s && s.email) entrarComSessao(s.email);
-    else abrirLogin();
-  }).catch(function (e) {
-    console.error('[Auth] falha ao ler sessão:', e);
-    abrirLogin();
-  });
 })();
