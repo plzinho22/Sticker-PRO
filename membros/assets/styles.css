@@ -790,7 +790,7 @@ html,body{max-width:100%;overflow-x:hidden;}
 }
 .fig{
   margin:0;
-  background:#D8C7B8;
+  background:red;
   border:1px solid rgba(234,217,206,.9);
   border-radius:var(--radius-md);
   padding:12px;
