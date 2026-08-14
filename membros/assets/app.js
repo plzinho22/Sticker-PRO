@@ -93,9 +93,24 @@ function esconder(no) {
           nome: cat.nome,
           nota: cat.nota || '',
           emoji: cat.emoji || s.emoji || '🎀',
-          pasta: cat.id === 'academia'
-  ? 'Academia'
-  : s.pasta,
+       pasta:
+  cat.id === '3d'
+    ? 'Figurinhas PREMIUM/3d Cristas'
+    : cat.id === 'academia'
+      ? 'Academia'
+      : cat.id === 'sao-miguel-arcanjo'
+        ? 'Figurinhas PREMIUM/40 Dias com Sao Miguel Arcanjo'
+        : cat.id === 'achadinhos'
+          ? 'Figurinhas PREMIUM/Achadinhos'
+          : cat.id === 'advocacia'
+            ? 'Figurinhas PREMIUM/Advocacia'
+            : cat.id === 'fig-geral'
+              ? 'Figurinhas'
+              : cat.id === 'min-geral'
+                ? 'Figurinha minimalista'
+                : cat.id === 'icones-geral'
+                  ? 'ICONES'
+                  : s.pasta,
           linkLocal: cat.link || '',
           secao: chave,
           secaoTitulo: s.titulo
