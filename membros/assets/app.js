@@ -335,20 +335,20 @@ function esconder(no) {
 
               pastas.map(function (pastaItem) {
 
-                return (
-                  '<button type="button" class="pasta-card">' +
+  return (
+    '<button type="button" class="pasta-card" ' +
+      'data-caminho="' + esc(pastaItem.caminho) + '">' +
 
-                    '<span class="pasta-icone">📁</span>' +
+      '<span class="pasta-icone">📁</span>' +
 
-                    '<span class="pasta-nome">' +
-                      esc(pastaItem.nome) +
-                    '</span>' +
+      '<span class="pasta-nome">' +
+        esc(pastaItem.nome) +
+      '</span>' +
 
-                  '</button>'
-                );
+    '</button>'
+  );
 
-              }).join('') +
-
+}).join('')
             '</div>';
 
         }
