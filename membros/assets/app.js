@@ -62,6 +62,133 @@
       .trim();
   }
 
+  /* ---------------------------------------------------------
+     COPIAR FIGURINHA
+     Copia a IMAGEM (não a URL) para a área de transferência, para
+     que colar no Instagram/Stories cole a figurinha em si.
+     --------------------------------------------------------- */
+
+  var SUPORTA_COPIA_IMAGEM = !!(
+    window.ClipboardItem &&
+    navigator.clipboard &&
+    typeof navigator.clipboard.write === 'function'
+  );
+
+  /* O clipboard de imagem só tem suporte confiável a PNG em todos os
+     navegadores/celulares testados. Outros formatos (webp, jpg) são
+     convertidos antes de copiar, para não falhar silenciosamente. */
+  function converterParaPng(blob) {
+    if (blob.type === 'image/png') return Promise.resolve(blob);
+
+    return createImageBitmap(blob).then(function (bitmap) {
+      var canvas = document.createElement('canvas');
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      canvas.getContext('2d').drawImage(bitmap, 0, 0);
+
+      return new Promise(function (resolve, reject) {
+        canvas.toBlob(function (novoBlob) {
+          if (novoBlob) resolve(novoBlob);
+          else reject(new Error('Não foi possível converter a imagem.'));
+        }, 'image/png');
+      });
+    });
+  }
+
+  /* Mensagem curta perto do botão, sem mexer no layout da galeria. */
+  function avisarFigura(botao, texto) {
+    var fig = botao.closest('figure');
+    if (!fig) return;
+
+    var existente = fig.querySelector('.fig-aviso');
+    if (existente) existente.remove();
+
+    var aviso = document.createElement('div');
+    aviso.className = 'fig-aviso';
+    aviso.textContent = texto;
+    fig.appendChild(aviso);
+
+    setTimeout(function () {
+      if (aviso.parentNode) aviso.parentNode.removeChild(aviso);
+    }, 3200);
+  }
+
+  function copiarFigurinha(url, botao) {
+    if (!SUPORTA_COPIA_IMAGEM) {
+      avisarFigura(botao, 'Seu navegador não permite copiar imagens diretamente.');
+      return;
+    }
+
+    var rotuloOriginal = botao.innerHTML;
+    botao.disabled = true;
+    botao.classList.add('copiando');
+    botao.innerHTML =
+      '<span class="fig-copiar-icone" aria-hidden="true">⏳</span>' +
+      '<span class="fig-copiar-rotulo">Copiando…</span>';
+
+    /* Importante: o ClipboardItem recebe a Promise diretamente, sem
+       "await" antes do navigator.clipboard.write(). Em Safari/iOS o
+       clipboard só é autorizado dentro do mesmo gesto de toque que
+       disparou o clique — colocar um await antes quebraria isso. */
+    var item = new ClipboardItem({
+      'image/png': fetch(url, { cache: 'no-store' })
+        .then(function (resp) {
+          if (!resp.ok) throw new Error('Falha ao baixar a imagem (' + resp.status + ').');
+          return resp.blob();
+        })
+        .then(converterParaPng)
+    });
+
+    navigator.clipboard.write([item])
+      .then(function () {
+        botao.classList.remove('copiando');
+        botao.classList.add('copiado');
+        botao.innerHTML =
+          '<span class="fig-copiar-icone" aria-hidden="true">✓</span>' +
+          '<span class="fig-copiar-rotulo">Copiada!</span>';
+
+        setTimeout(function () {
+          botao.classList.remove('copiado');
+          botao.disabled = false;
+          botao.innerHTML = rotuloOriginal;
+        }, 1800);
+      })
+      .catch(function (erro) {
+        console.error('[Copiar figurinha] falha:', erro);
+        botao.classList.remove('copiando');
+        botao.disabled = false;
+        botao.innerHTML = rotuloOriginal;
+        avisarFigura(botao, 'Não foi possível copiar a figurinha. Tente novamente.');
+      });
+  }
+
+  /* HTML de uma figura, com o botão de copiar embutido.
+     Usado nos três pontos do arquivo que montam a galeria, para não
+     duplicar o mesmo botão em três lugares diferentes. */
+  function figuraHtml(url) {
+    var u = esc(url);
+    return (
+      '<figure class="fig">' +
+        '<img src="' + u + '" alt="Figurinha" loading="lazy" decoding="async">' +
+        '<button type="button" class="fig-copiar" data-url="' + u + '">' +
+          '<span class="fig-copiar-icone" aria-hidden="true">⧉</span>' +
+          '<span class="fig-copiar-rotulo">Copiar</span>' +
+        '</button>' +
+      '</figure>'
+    );
+  }
+
+  /* Um único listener, registrado uma vez em iniciarCopiarFigurinhas(),
+     cobre os botões mesmo quando a galeria é recriada via innerHTML. */
+  function iniciarCopiarFigurinhas() {
+    document.addEventListener('click', function (ev) {
+      var botao = ev.target && ev.target.closest && ev.target.closest('.fig-copiar');
+      if (!botao || botao.disabled) return;
+      var url = botao.getAttribute('data-url');
+      if (url) copiarFigurinha(url, botao);
+    });
+  }
+
   function memoria(chave, valor) {
     try {
       if (valor === undefined) return localStorage.getItem(chave);
@@ -274,14 +401,7 @@ function esconder(no) {
           galeria.innerHTML =
             '<div class="galeria-grade">' +
               imagens.map(function (imagem) {
-                return (
-                  '<figure class="fig">' +
-                    '<img src="' + esc(imagem) + '"' +
-                      ' alt="Figurinha"' +
-                      ' loading="lazy"' +
-                      ' decoding="async">' +
-                  '</figure>'
-                );
+                return figuraHtml(imagem);
               }).join('') +
             '</div>';
         }
@@ -519,16 +639,7 @@ function esconder(no) {
           '<div class="galeria-grade">' +
 
             imagens.map(function (imagem) {
-
-              return (
-                '<figure class="fig">' +
-                  '<img src="' + esc(imagem) + '"' +
-                    ' alt="Figurinha"' +
-                    ' loading="lazy"' +
-                    ' decoding="async">' +
-                '</figure>'
-              );
-
+              return figuraHtml(imagem);
             }).join('') +
 
           '</div>';
@@ -1529,10 +1640,7 @@ function esconder(no) {
   function gradeDeFiguras(imagens) {
     return '<div class="galeria-grade">' +
       imagens.map(function (imagem) {
-        return '<figure class="fig">' +
-          '<img src="' + esc(imagem) + '" alt="Figurinha"' +
-          ' loading="lazy" decoding="async">' +
-        '</figure>';
+        return figuraHtml(imagem);
       }).join('') +
     '</div>';
   }
@@ -2580,6 +2688,7 @@ function listarPastaStorage(pasta, token, offset) {
     iniciarBotoesNegado();
     iniciarRotas();
     iniciarSairSidebar();
+    iniciarCopiarFigurinhas();
 
     Promise.resolve(
       carregarDados()
