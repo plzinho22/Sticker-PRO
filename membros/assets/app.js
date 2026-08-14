@@ -93,7 +93,9 @@ function esconder(no) {
           nome: cat.nome,
           nota: cat.nota || '',
           emoji: cat.emoji || s.emoji || '🎀',
-          pasta: s.pasta,
+          pasta: cat.id === 'academia'
+  ? 'Academia'
+  : s.pasta,
           linkLocal: cat.link || '',
           secao: chave,
           secaoTitulo: s.titulo
