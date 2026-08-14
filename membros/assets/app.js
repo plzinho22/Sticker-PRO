@@ -395,85 +395,59 @@ function esconder(no) {
         return listarPastasStorage(pasta, token);
       });
   }
-     function listarPastasStorage(pasta, token) {
-    var CFG = window.STICKER_CONFIG || {};
+    function listarPastasStorage(pasta, token) {
+  var CFG = window.STICKER_CONFIG || {};
 
-    var url =
-      CFG.supabaseUrl.replace(/\/+$/, '') +
-      '/storage/v1/object/list/Figurinhas';
+  var supabaseUrl =
+    CFG.supabaseUrl.replace(/\/+$/, '');
 
-    return fetch(url, {
+  return fetch(
+    supabaseUrl +
+    '/rest/v1/rpc/listar_pastas_figurinhas',
+    {
       method: 'POST',
+
       headers: {
         apikey: CFG.supabaseAnonKey,
         Authorization: 'Bearer ' + token,
         'Content-Type': 'application/json'
       },
+
       body: JSON.stringify({
-        prefix: pasta.replace(/\/+$/, ''),
-        limit: 1000,
-        offset: 0,
-        sortBy: {
-          column: 'name',
-          order: 'asc'
-        }
+        prefixo: pasta
       })
-    })
-    .then(function (resp) {
-      if (!resp.ok) {
-        return resp.text().then(function (texto) {
+    }
+  )
+  .then(function (resp) {
+
+    if (!resp.ok) {
+      return resp.text()
+        .then(function (texto) {
           throw new Error(
-            'Storage respondeu ' +
+            'RPC respondeu ' +
             resp.status +
             ': ' +
             texto
           );
         });
-      }
+    }
 
-      return resp.json();
-    })
-    .then(function (arquivos) {
-      arquivos = Array.isArray(arquivos)
-        ? arquivos
-        : [];
+    return resp.json();
+  })
+  .then(function (dados) {
 
-      var pastas = [];
+    if (!Array.isArray(dados)) {
+      return [];
+    }
 
-      arquivos.forEach(function (arquivo) {
-        if (!arquivo || !arquivo.name) {
-          return;
-        }
-
-        /*
-         * No Supabase Storage:
-         * id === null significa que o item é uma pasta.
-         */
-        if (arquivo.id === null) {
-          pastas.push({
-            nome: arquivo.name,
-            caminho:
-              pasta.replace(/\/+$/, '') +
-              '/' +
-              arquivo.name
-          });
-        }
-      });
-
-      pastas.sort(function (a, b) {
-        return a.nome.localeCompare(
-          b.nome,
-          'pt-BR',
-          {
-            numeric: true,
-            sensitivity: 'base'
-          }
-        );
-      });
-
-      return pastas;
+    return dados.map(function (item) {
+      return {
+        nome: item.nome,
+        caminho: item.caminho
+      };
     });
-  }
+  });
+}
   function carregarImagensStorage(pasta) {
     var CFG = window.STICKER_CONFIG || {};
 
