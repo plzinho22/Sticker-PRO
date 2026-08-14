@@ -348,9 +348,30 @@ function esconder(no) {
     '</button>'
   );
 
-}).join('')
-            '</div>';
+}).join('') +
 
+'</div>';
+          var botoesPastas =
+            area.querySelectorAll('.pasta-card');
+
+          botoesPastas.forEach(function (botao) {
+
+            botao.addEventListener('click', function () {
+
+              var caminho =
+                botao.getAttribute('data-caminho');
+
+              var nome =
+                botao.querySelector('.pasta-nome');
+
+              nome =
+                nome ? nome.textContent : 'Coleção';
+
+              abrirPastaDireta(caminho, nome);
+
+            });
+
+          });
         }
 
       })
@@ -376,6 +397,99 @@ function esconder(no) {
 
       });
   }
+   function abrirPastaDireta(caminho, nome) {
+  var conteudo = el['conteudo'];
+
+  conteudo.innerHTML =
+    '<div class="pagina entra">' +
+      '<header class="pagina-topo">' +
+        '<button type="button" class="voltar" id="btn-voltar-pasta-direta">← Voltar</button>' +
+        '<span class="eyebrow">📁</span>' +
+        '<h1 class="pagina-titulo">' + esc(nome) + '</h1>' +
+        '<p class="pagina-intro">Escolha uma figurinha para usar no seu Story.</p>' +
+      '</header>' +
+      '<div id="galeria-status" class="aviso aviso-info">Carregando figurinhas…</div>' +
+      '<div id="galeria-conteudo"></div>' +
+    '</div>';
+
+  var voltar =
+    document.getElementById('btn-voltar-pasta-direta');
+
+  if (voltar) {
+    voltar.addEventListener('click', function () {
+      render();
+    });
+  }
+
+  carregarImagensStorage(caminho)
+    .then(function (imagens) {
+
+      var status =
+        document.getElementById('galeria-status');
+
+      var galeria =
+        document.getElementById('galeria-conteudo');
+
+      if (status) {
+        status.remove();
+      }
+
+      if (!imagens.length) {
+
+        if (galeria) {
+          galeria.innerHTML =
+            '<div class="aviso aviso-info">' +
+              'Nenhuma figurinha encontrada nesta pasta.' +
+            '</div>';
+        }
+
+        return;
+      }
+
+      if (galeria) {
+
+        galeria.innerHTML =
+          '<div class="galeria-grade">' +
+
+            imagens.map(function (imagem) {
+
+              return (
+                '<figure class="fig">' +
+                  '<img src="' + esc(imagem) + '"' +
+                    ' alt="Figurinha"' +
+                    ' loading="lazy"' +
+                    ' decoding="async">' +
+                '</figure>'
+              );
+
+            }).join('') +
+
+          '</div>';
+      }
+
+    })
+    .catch(function (erro) {
+
+      console.error(
+        '[Pasta] Erro ao carregar figurinhas:',
+        erro
+      );
+
+      var status =
+        document.getElementById('galeria-status');
+
+      if (status) {
+
+        status.className =
+          'aviso aviso-erro';
+
+        status.textContent =
+          'Não foi possível carregar as figurinhas. Tente novamente.';
+
+      }
+
+    });
+}
      function carregarPastasStorage(pasta) {
     var CFG = window.STICKER_CONFIG || {};
 
