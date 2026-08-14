@@ -275,6 +275,126 @@ function esconder(no) {
         }
       });
   }
+     function abrirNavegadorDePastas(item, pasta) {
+    var conteudo = el['conteudo'];
+
+    conteudo.innerHTML =
+      '<div class="pagina entra">' +
+        '<header class="pagina-topo">' +
+          '<button type="button" class="voltar" id="btn-voltar-pastas">← Voltar</button>' +
+          '<span class="eyebrow">' + esc(item.emoji || '📁') + '</span>' +
+          '<h1 class="pagina-titulo">' + esc(item.nome) + '</h1>' +
+          '<p class="pagina-intro">Escolha uma categoria.</p>' +
+        '</header>' +
+
+        '<div id="pastas-status" class="aviso aviso-info">' +
+          'Carregando categorias…' +
+        '</div>' +
+
+        '<div id="pastas-conteudo"></div>' +
+
+      '</div>';
+
+    var voltar = document.getElementById('btn-voltar-pastas');
+
+    if (voltar) {
+      voltar.addEventListener('click', function () {
+        render();
+      });
+    }
+
+    carregarPastasStorage(pasta)
+      .then(function (pastas) {
+
+        var status =
+          document.getElementById('pastas-status');
+
+        var area =
+          document.getElementById('pastas-conteudo');
+
+        if (status) {
+          status.remove();
+        }
+
+        if (!pastas.length) {
+
+          if (area) {
+            area.innerHTML =
+              '<div class="aviso aviso-info">' +
+                'Nenhuma categoria encontrada.' +
+              '</div>';
+          }
+
+          return;
+        }
+
+        if (area) {
+
+          area.innerHTML =
+            '<div class="grade-pastas">' +
+
+              pastas.map(function (pastaItem) {
+
+                return (
+                  '<button type="button" class="pasta-card">' +
+
+                    '<span class="pasta-icone">📁</span>' +
+
+                    '<span class="pasta-nome">' +
+                      esc(pastaItem.nome) +
+                    '</span>' +
+
+                  '</button>'
+                );
+
+              }).join('') +
+
+            '</div>';
+
+        }
+
+      })
+      .catch(function (erro) {
+
+        console.error(
+          '[Pastas] Erro ao carregar:',
+          erro
+        );
+
+        var status =
+          document.getElementById('pastas-status');
+
+        if (status) {
+
+          status.className =
+            'aviso aviso-erro';
+
+          status.textContent =
+            'Não foi possível carregar as categorias. Tente novamente.';
+
+        }
+
+      });
+  }
+     function carregarPastasStorage(pasta) {
+    var CFG = window.STICKER_CONFIG || {};
+
+    if (!CFG.supabaseUrl || !CFG.supabaseAnonKey) {
+      return Promise.reject(
+        new Error('Supabase não configurado.')
+      );
+    }
+
+    return Promise.resolve(Auth.token())
+      .then(function (token) {
+
+        if (!token) {
+          throw new Error('Sessão não encontrada.');
+        }
+
+        return listarPastasStorage(pasta, token);
+      });
+  }
   function carregarImagensStorage(pasta) {
     var CFG = window.STICKER_CONFIG || {};
 
