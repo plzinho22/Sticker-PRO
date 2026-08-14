@@ -286,6 +286,14 @@ function esconder(no) {
           '<h1 class="pagina-titulo">' + esc(item.nome) + '</h1>' +
           '<p class="pagina-intro">Escolha uma categoria.</p>' +
         '</header>' +
+              '<div class="busca-pastas">' +
+          '<span class="busca-pastas-icone">🔎</span>' +
+          '<input ' +
+            'type="search" ' +
+            'id="busca-pastas-input" ' +
+            'placeholder="Buscar uma categoria..." ' +
+            'autocomplete="off">' +
+        '</div>' +
 
         '<div id="pastas-status" class="aviso aviso-info">' +
           'Carregando categorias…' +
@@ -353,6 +361,34 @@ function esconder(no) {
 '</div>';
           var botoesPastas =
             area.querySelectorAll('.pasta-card');
+                   var buscaPastas =
+          document.getElementById('busca-pastas-input');
+
+        if (buscaPastas) {
+
+          buscaPastas.addEventListener('input', function () {
+
+            var termo =
+              normalizar(buscaPastas.value.trim());
+
+            botoesPastas.forEach(function (botao) {
+
+              var nome =
+                botao.querySelector('.pasta-nome');
+
+              var texto =
+                nome ? normalizar(nome.textContent) : '';
+
+              botao.style.display =
+                !termo || texto.indexOf(termo) !== -1
+                  ? ''
+                  : 'none';
+
+            });
+
+          });
+
+        }
 
           botoesPastas.forEach(function (botao) {
 
