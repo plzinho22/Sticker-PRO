@@ -1078,3 +1078,33 @@ html,body{max-width:100%;overflow-x:hidden;}
     font-size: 12.5px;
   }
 }
+
+/* ---- Mensagem de suporte da tela de login ---- */
+.login-suporte{
+  margin-top:20px;
+  padding-top:16px;
+  border-top:1px solid var(--line);
+  text-align:center;
+  font-size:12.5px;
+  line-height:1.6;
+  color:var(--ink-soft);
+}
+.login-suporte b{
+  display:inline-block;
+  margin-bottom:3px;
+  color:var(--ink);
+  font-weight:700;
+}
+.login-suporte a{
+  color:var(--rose);
+  font-weight:600;
+  text-decoration:underline;
+  text-underline-offset:2px;
+  word-break:break-word;
+}
+.login-suporte a:hover{color:var(--ink);}
+
+@media (max-width:420px){
+  .login-suporte{font-size:12px;margin-top:18px;padding-top:14px;}
+  .login-suporte a{display:inline-block;padding:2px 0;}
+}
