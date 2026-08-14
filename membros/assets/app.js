@@ -262,112 +262,162 @@ function esconder(no) {
      Pastas vêm com id === null; arquivos possuem id.
      Isso permite percorrer automaticamente todas as subpastas.
   */
-  function listarPastaStorage(pasta, token, offset) {
-    var CFG = window.STICKER_CONFIG || {};
-    var limite = 1000;
-    var inicio = offset || 0;
+function listarPastaStorage(pasta, token, offset) {
+  var CFG = window.STICKER_CONFIG || {};
+  var limite = 1000;
+  var inicio = offset || 0;
 
-    var url =
-      CFG.supabaseUrl.replace(/\/+$/, '') +
-      '/storage/v1/object/list/Figurinhas';
+  var url =
+    CFG.supabaseUrl.replace(/\/+$/, '') +
+    '/storage/v1/object/list/Figurinhas';
 
-    return fetch(url, {
-      method: 'POST',
-      headers: {
-        apikey: CFG.supabaseAnonKey,
-        Authorization: 'Bearer ' + token,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        prefix: pasta.replace(/\/+$/, ''),
-        limit: limite,
-        offset: inicio,
-        sortBy: {
-          column: 'name',
-          order: 'asc'
-        }
-      })
+  return fetch(url, {
+    method: 'POST',
+
+    headers: {
+      apikey: CFG.supabaseAnonKey,
+      Authorization: 'Bearer ' + token,
+      'Content-Type': 'application/json'
+    },
+
+    body: JSON.stringify({
+      prefix: pasta.replace(/\/+$/, ''),
+      limit: limite,
+      offset: inicio,
+      sortBy: {
+        column: 'name',
+        order: 'asc'
+      }
     })
-    .then(function (resp) {
-      if (!resp.ok) {
-        return resp.text().then(function (texto) {
-          throw new Error(
-            'Storage respondeu ' + resp.status + ': ' + texto
-          );
-        });
+  })
+  .then(function (resp) {
+    if (!resp.ok) {
+      return resp.text().then(function (texto) {
+        throw new Error(
+          'Storage respondeu ' +
+          resp.status +
+          ': ' +
+          texto
+        );
+      });
+    }
+
+    return resp.json();
+  })
+  .then(function (arquivos) {
+
+    arquivos = Array.isArray(arquivos)
+      ? arquivos
+      : [];
+
+    var imagens = [];
+    var subpastas = [];
+
+    arquivos.forEach(function (arquivo) {
+
+      if (!arquivo || !arquivo.name) {
+        return;
       }
 
-      return resp.json();
-    })
-    .then(function (arquivos) {
-      arquivos = Array.isArray(arquivos) ? arquivos : [];
+      var caminho =
+        pasta.replace(/\/+$/, '') +
+        '/' +
+        arquivo.name;
 
-      var imagens = [];
-      var subpastas = [];
+      /*
+       * Arquivos de imagem entram diretamente na lista.
+       */
+      if (
+        /\.(png|jpe?g|webp|gif)$/i.test(
+          arquivo.name
+        )
+      ) {
+        imagens.push(caminho);
+        return;
+      }
 
-      arquivos.forEach(function (arquivo) {
-        if (!arquivo || !arquivo.name) return;
+      /*
+       * Pastas/subpastas serão percorridas
+       * separadamente.
+       */
+      if (arquivo.id === null) {
+        subpastas.push(caminho);
+      }
+    });
 
-        var caminho =
-          pasta.replace(/\/+$/, '') +
-          '/' +
-          arquivo.name;
+    /*
+     * Se houver mais de 1000 itens, busca a próxima página.
+     */
+    var proximaPagina =
+      arquivos.length === limite
+        ? listarPastaStorage(
+            pasta,
+            token,
+            inicio + limite
+          )
+        : Promise.resolve([]);
 
-        if (arquivo.id === null) {
-          subpastas.push(caminho);
-          return;
-        }
-
-        if (/\.(png|jpe?g|webp|gif)$/i.test(arquivo.name)) {
-          imagens.push(caminho);
-        }
+    /*
+     * Busca também todas as subpastas.
+     */
+    var promessasSubpastas =
+      subpastas.map(function (subpasta) {
+        return listarPastaStorage(
+          subpasta,
+          token
+        );
       });
 
-      var proximaPagina =
-        arquivos.length === limite
-          ? listarPastaStorage(pasta, token, inicio + limite)
-          : Promise.resolve([]);
+    return Promise.all([
+      Promise.resolve(imagens),
+      Promise.all(promessasSubpastas),
+      proximaPagina
+    ]);
+  })
+  .then(function (partes) {
 
-      return Promise.all([
-        Promise.resolve(subpastas),
-        proximaPagina
-      ]);
-    })
-    .then(function (partes) {
-      var subpastas = partes[0];
-      var arquivosDaProximaPagina = partes[1];
+    var imagens = partes[0] || [];
+    var resultadosSubpastas = partes[1] || [];
+    var imagensProximaPagina = partes[2] || [];
 
-      return Promise.all(
-        subpastas.map(function (subpasta) {
-          return listarPastaStorage(subpasta, token);
-        })
-      ).then(function (resultadosSubpastas) {
-        var imagens = [];
+    /*
+     * Junta as imagens da pasta atual.
+     */
+    imagens = imagens.concat(
+      imagensProximaPagina
+    );
 
-        resultadosSubpastas.forEach(function (resultado) {
-          imagens = imagens.concat(resultado);
-        });
+    /*
+     * Junta as imagens das subpastas.
+     */
+    resultadosSubpastas.forEach(function (resultado) {
+      imagens = imagens.concat(resultado);
+    });
 
-        imagens = imagens.concat(arquivosDaProximaPagina);
-
-        return imagens;
-      });
-    })
-    .then(function (imagens) {
-      imagens.sort(function (a, b) {
-        return a.localeCompare(b, 'pt-BR', {
+    imagens.sort(function (a, b) {
+      return a.localeCompare(
+        b,
+        'pt-BR',
+        {
           numeric: true,
           sensitivity: 'base'
-        });
-      });
-
-      return Promise.all(
-        imagens.map(function (caminho) {
-          return gerarUrlAssinada(caminho, token);
-        })
+        }
       );
     });
-  }
+
+    /*
+     * Transforma cada caminho em URL assinada.
+     */
+    return Promise.all(
+      imagens.map(function (caminho) {
+        return gerarUrlAssinada(
+          caminho,
+          token
+        );
+      })
+    );
+  });
+}
 
   function gerarUrlAssinada(caminho, token) {
     var CFG = window.STICKER_CONFIG || {};
