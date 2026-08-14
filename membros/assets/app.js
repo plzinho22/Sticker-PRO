@@ -33,7 +33,15 @@
   var estado = {
     email: null, autorizado: false,
     carregandoDados: false, erroDados: null,
-    busca: ''
+    busca: '',
+
+    /* pastas do bucket, vindas da RPC */
+    categoriasRemotas: [],
+    mapaCategorias: {},
+    carregandoCategorias: false,
+    categoriasCarregadas: false,
+    erroCategorias: null,
+    atualizarGradeInicio: null
   };
 
   /* ---------------- utilidades ---------------- */
@@ -161,6 +169,14 @@ function esconder(no) {
       '<span class="cartao-nota">' + esc(item.nota) + '</span>' +
       '<span class="selo selo-ok">Abrir coleção</span>' +
       '<span class="cartao-acao">Ver figurinhas <span aria-hidden="true">→</span></span>';
+
+    /* Card do bucket: sem id, abre pelo caminho.
+       Os 8 cards manuais continuam usando abrirColecao(). */
+    if (item.remoto) {
+      return '<button class="cartao" type="button"' +
+        ' data-caminho="' + esc(item.pasta) + '"' +
+        ' data-nome="' + esc(item.nome) + '">' + miolo + '</button>';
+    }
 
     return '<button class="cartao" type="button" onclick="abrirColecao(\'' +
       esc(item.id) +
@@ -301,6 +317,8 @@ function esconder(no) {
 
         '<div id="pastas-conteudo"></div>' +
 
+        '<div id="figuras-diretas"></div>' +
+
       '</div>';
 
     var voltar = document.getElementById('btn-voltar-pastas');
@@ -310,6 +328,10 @@ function esconder(no) {
         render();
       });
     }
+
+    /* Pasta mista: as imagens soltas aparecem abaixo das subpastas.
+       Roda em paralelo, sem bloquear a grade de pastas. */
+    montarFigurasDiretas(pasta);
 
     carregarPastasStorage(pasta)
       .then(function (pastas) {
@@ -403,7 +425,7 @@ function esconder(no) {
               nome =
                 nome ? nome.textContent : 'Coleção';
 
-              abrirPastaDireta(caminho, nome);
+              abrirCategoriaPorCaminho(caminho, nome);
 
             });
 
@@ -598,6 +620,479 @@ function esconder(no) {
     });
   });
 }
+
+  /* ==========================================================
+     CATEGORIAS DO BUCKET — RPC agregada
+     Uma chamada por sessão devolve os metadados das 433 pastas.
+     Nenhuma imagem trafega para o navegador.
+     ========================================================== */
+
+  var CACHE_CATEGORIAS = 'stickerpro_categorias_v2';
+  var CACHE_MINUTOS = 15;
+
+  function lerCacheCategorias() {
+    try {
+      var bruto = sessionStorage.getItem(CACHE_CATEGORIAS);
+      if (!bruto) return null;
+
+      var dados = JSON.parse(bruto);
+      if (!dados || !Array.isArray(dados.itens)) return null;
+
+      if (Date.now() - (dados.quando || 0) > CACHE_MINUTOS * 60000) {
+        return null;
+      }
+
+      return dados.itens;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function gravarCacheCategorias(itens) {
+    try {
+      sessionStorage.setItem(CACHE_CATEGORIAS, JSON.stringify({
+        quando: Date.now(),
+        itens: itens
+      }));
+    } catch (e) {}
+  }
+
+  function listarCategoriasRPC(token) {
+    var CFG = window.STICKER_CONFIG || {};
+
+    var url =
+      CFG.supabaseUrl.replace(/\/+$/, '') +
+      '/rest/v1/rpc/listar_todas_categorias_figurinhas';
+
+    return fetch(url, {
+      method: 'POST',
+
+      headers: {
+        apikey: CFG.supabaseAnonKey,
+        Authorization: 'Bearer ' + token,
+        'Content-Type': 'application/json'
+      },
+
+      body: JSON.stringify({
+        profundidade: CFG.profundidadeCategorias || 4
+      })
+    })
+    .then(function (resp) {
+      if (!resp.ok) {
+        return resp.text().then(function (texto) {
+          throw new Error('RPC respondeu ' + resp.status + ': ' + texto);
+        });
+      }
+
+      return resp.json();
+    })
+    .then(function (dados) {
+      if (!Array.isArray(dados)) return [];
+
+      return dados
+        .filter(function (item) {
+          return item && item.nome && item.caminho;
+        })
+        .map(function (item) {
+          return {
+            nome: item.nome,
+            caminho: item.caminho,
+            pai: item.pai || '',
+            nivel: item.nivel || 1,
+            diretos: item.arquivos_diretos || 0,
+            subpastas: item.subpastas || 0,
+            total: item.total_arquivos || 0
+          };
+        });
+    });
+  }
+
+  /* Índice por caminho: é ele que torna o clique instantâneo. */
+  function montarMapaCategorias(itens) {
+    var mapa = {};
+
+    itens.forEach(function (cat) {
+      mapa[normalizar(cat.caminho)] = cat;
+    });
+
+    estado.mapaCategorias = mapa;
+  }
+
+  function infoDaPasta(caminho) {
+    if (!caminho) return null;
+    return estado.mapaCategorias[normalizar(caminho)] || null;
+  }
+
+  function carregarCategoriasRemotas() {
+    if (estado.categoriasCarregadas) {
+      return Promise.resolve(estado.categoriasRemotas);
+    }
+
+    var CFG = window.STICKER_CONFIG || {};
+
+    if (!CFG.supabaseUrl || !CFG.supabaseAnonKey) {
+      estado.categoriasCarregadas = true;
+      return Promise.resolve([]);
+    }
+
+    var cache = lerCacheCategorias();
+
+    if (cache) {
+      estado.categoriasRemotas = cache;
+      montarMapaCategorias(cache);
+      estado.categoriasCarregadas = true;
+      return Promise.resolve(cache);
+    }
+
+    estado.carregandoCategorias = true;
+    estado.erroCategorias = null;
+
+    return Promise.resolve(Auth.token())
+      .then(function (token) {
+        if (!token) throw new Error('Sessão não encontrada.');
+        return listarCategoriasRPC(token);
+      })
+      .then(function (itens) {
+        estado.categoriasRemotas = itens;
+        montarMapaCategorias(itens);
+        estado.categoriasCarregadas = true;
+        estado.carregandoCategorias = false;
+
+        gravarCacheCategorias(itens);
+
+        console.log('[Categorias] carregadas:', itens.length);
+
+        return itens;
+      })
+      .catch(function (erro) {
+        console.error('[Categorias] falha:', erro);
+
+        estado.carregandoCategorias = false;
+        estado.erroCategorias = erro.message || 'erro';
+        estado.categoriasRemotas = [];
+        estado.mapaCategorias = {};
+
+        return [];
+      });
+  }
+
+  /* Catálogo manual (content.js) PRIMEIRO — mantém capa, emoji,
+     link e nota. Depois as pastas do bucket, sem duplicar. */
+  function catalogoCompleto() {
+    var manuais = catalogo();
+    var vistos = {};
+
+    manuais.forEach(function (item) {
+      if (item.pasta) vistos[normalizar(item.pasta)] = true;
+    });
+
+    var remotos = [];
+
+    estado.categoriasRemotas.forEach(function (cat) {
+      var chave = normalizar(cat.caminho);
+
+      if (vistos[chave]) return;
+      vistos[chave] = true;
+
+      remotos.push({
+        id: '',
+        nome: cat.nome,
+        /* o caminho do pai vira a nota: dá contexto no card
+           e ainda entra na busca, já que filtrar() lê a nota */
+        nota: cat.pai ? cat.pai.split('/').join(' / ') : '',
+        emoji: '📁',
+        pasta: cat.caminho,
+        linkLocal: '',
+        secao: 'storage',
+        secaoTitulo: 'Categorias',
+        remoto: true
+      });
+    });
+
+    remotos.sort(function (a, b) {
+      return a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' });
+    });
+
+    return manuais.concat(remotos);
+  }
+
+  /* ==========================================================
+     CLIQUE INTELIGENTE
+     A decisão vem do payload já em memória: zero requisições.
+     ========================================================== */
+
+  function abrirCategoriaPorCaminho(caminho, nome) {
+    if (!caminho) return;
+
+    nome = nome || 'Coleção';
+
+    var info = infoDaPasta(caminho);
+
+    if (info) {
+      /* Container OU mista -> navegador de pastas.
+         O navegador mostra as imagens diretas, se houver. */
+      if (info.subpastas > 0) {
+        abrirNavegadorDePastas({ nome: nome, emoji: '📁' }, caminho);
+        return;
+      }
+
+      /* Folha simples -> galeria direta. */
+      abrirPastaDireta(caminho, nome);
+      return;
+    }
+
+    /* Fallback: caminho fora do mapa (cache vencido, RPC fora do ar).
+       Consulta leve, sem varredura de arquivos. */
+    el['conteudo'].innerHTML =
+      '<div class="pagina entra">' +
+        '<header class="pagina-topo">' +
+          '<button type="button" class="voltar" id="btn-voltar-abrindo">← Voltar</button>' +
+          '<span class="eyebrow">📁</span>' +
+          '<h1 class="pagina-titulo">' + esc(nome) + '</h1>' +
+        '</header>' +
+        '<div class="aviso aviso-info">Abrindo…</div>' +
+      '</div>';
+
+    var voltar = document.getElementById('btn-voltar-abrindo');
+
+    if (voltar) {
+      voltar.addEventListener('click', function () { render(); });
+    }
+
+    carregarPastasStorage(caminho)
+      .then(function (subpastas) {
+        if (subpastas && subpastas.length) {
+          abrirNavegadorDePastas({ nome: nome, emoji: '📁' }, caminho);
+          return;
+        }
+
+        abrirPastaDireta(caminho, nome);
+      })
+      .catch(function (erro) {
+        console.error('[Categoria] falha ao inspecionar:', erro);
+        abrirPastaDireta(caminho, nome);
+      });
+  }
+
+  window.abrirCategoria = abrirCategoriaPorCaminho;
+
+  function ligarCliquesCategorias(area) {
+    if (!area) return;
+
+    var botoes = area.querySelectorAll('.cartao[data-caminho]');
+
+    botoes.forEach(function (botao) {
+      botao.addEventListener('click', function () {
+        abrirCategoriaPorCaminho(
+          botao.getAttribute('data-caminho'),
+          botao.getAttribute('data-nome')
+        );
+      });
+    });
+  }
+
+  /* ==========================================================
+     IMAGENS DIRETAS — para pastas mistas
+     NÃO é recursiva: lista só o nível da própria pasta e
+     ignora as subpastas de propósito.
+     ========================================================== */
+
+  function listarImagensDiretas(pasta, token, offset, acumulado) {
+    var CFG = window.STICKER_CONFIG || {};
+    var limite = 1000;
+    var inicio = offset || 0;
+    var lista = acumulado || [];
+
+    var url =
+      CFG.supabaseUrl.replace(/\/+$/, '') +
+      '/storage/v1/object/list/Figurinhas';
+
+    return fetch(url, {
+      method: 'POST',
+
+      headers: {
+        apikey: CFG.supabaseAnonKey,
+        Authorization: 'Bearer ' + token,
+        'Content-Type': 'application/json'
+      },
+
+      body: JSON.stringify({
+        prefix: pasta.replace(/\/+$/, ''),
+        limit: limite,
+        offset: inicio,
+        sortBy: { column: 'name', order: 'asc' }
+      })
+    })
+    .then(function (resp) {
+      if (!resp.ok) {
+        return resp.text().then(function (texto) {
+          throw new Error('Storage respondeu ' + resp.status + ': ' + texto);
+        });
+      }
+
+      return resp.json();
+    })
+    .then(function (itens) {
+      itens = Array.isArray(itens) ? itens : [];
+
+      itens.forEach(function (arquivo) {
+        if (!arquivo || !arquivo.name) return;
+
+        /* id === null é subpasta. Aqui ela é ignorada:
+           quem cuida das subpastas é a grade de cima. */
+        if (arquivo.id === null) return;
+
+        if (!/\.(png|jpe?g|webp|gif)$/i.test(arquivo.name)) return;
+
+        lista.push(pasta.replace(/\/+$/, '') + '/' + arquivo.name);
+      });
+
+      if (itens.length === limite) {
+        return listarImagensDiretas(pasta, token, inicio + limite, lista);
+      }
+
+      return lista;
+    });
+  }
+
+  /* ==========================================================
+     ASSINATURA EM LOTE
+     Usada SOMENTE pelas imagens diretas de pastas mistas.
+     A galeria comum (listarPastaStorage) continua assinando
+     uma a uma — essa é a EDIÇÃO 8, ainda não aplicada.
+     Se o lote falhar, cai sozinho em gerarUrlAssinada.
+     ========================================================== */
+
+  function assinarEmLote(caminhos, token) {
+    var CFG = window.STICKER_CONFIG || {};
+    var TAMANHO = 100;
+
+    var base = CFG.supabaseUrl.replace(/\/+$/, '') + '/storage/v1';
+    var url = base + '/object/sign/Figurinhas';
+
+    function completar(u) {
+      if (u.indexOf('http') === 0) return u;
+      return base + (u.charAt(0) === '/' ? '' : '/') + u;
+    }
+
+    function lote(inicio, acumulado) {
+      if (inicio >= caminhos.length) {
+        return Promise.resolve(acumulado);
+      }
+
+      var fatia = caminhos.slice(inicio, inicio + TAMANHO);
+
+      return fetch(url, {
+        method: 'POST',
+
+        headers: {
+          apikey: CFG.supabaseAnonKey,
+          Authorization: 'Bearer ' + token,
+          'Content-Type': 'application/json'
+        },
+
+        body: JSON.stringify({
+          expiresIn: 3600,
+          paths: fatia
+        })
+      })
+      .then(function (resp) {
+        if (!resp.ok) throw new Error('lote respondeu ' + resp.status);
+        return resp.json();
+      })
+      .then(function (dados) {
+        if (!Array.isArray(dados)) throw new Error('resposta inesperada');
+
+        dados.forEach(function (d) {
+          var assinada = d && (d.signedURL || d.signedUrl);
+          if (assinada) acumulado.push(completar(assinada));
+        });
+
+        return lote(inicio + TAMANHO, acumulado);
+      })
+      .catch(function (erro) {
+        console.warn('[Assinatura] lote falhou, modo individual:', erro);
+
+        return Promise.all(
+          fatia.map(function (c) { return gerarUrlAssinada(c, token); })
+        )
+        .then(function (urls) {
+          urls.forEach(function (u) { acumulado.push(u); });
+          return lote(inicio + TAMANHO, acumulado);
+        });
+      });
+    }
+
+    return lote(0, []);
+  }
+
+  function carregarImagensDiretas(pasta) {
+    var CFG = window.STICKER_CONFIG || {};
+
+    if (!CFG.supabaseUrl || !CFG.supabaseAnonKey) {
+      return Promise.reject(new Error('Supabase não configurado.'));
+    }
+
+    return Promise.resolve(Auth.token()).then(function (token) {
+      if (!token) throw new Error('Sessão não encontrada.');
+
+      return listarImagensDiretas(pasta, token).then(function (caminhos) {
+        if (!caminhos.length) return [];
+
+        caminhos.sort(function (a, b) {
+          return a.localeCompare(b, 'pt-BR', {
+            numeric: true, sensitivity: 'base'
+          });
+        });
+
+        return assinarEmLote(caminhos, token);
+      });
+    });
+  }
+
+  function gradeDeFiguras(imagens) {
+    return '<div class="galeria-grade">' +
+      imagens.map(function (imagem) {
+        return '<figure class="fig">' +
+          '<img src="' + esc(imagem) + '" alt="Figurinha"' +
+          ' loading="lazy" decoding="async">' +
+        '</figure>';
+      }).join('') +
+    '</div>';
+  }
+
+  /* Pastas mistas: renderiza as imagens soltas abaixo das subpastas. */
+  function montarFigurasDiretas(pasta) {
+    var area = document.getElementById('figuras-diretas');
+    if (!area) return;
+
+    var info = infoDaPasta(pasta);
+
+    /* Se o mapa garante que não há imagens diretas, nem consulta. */
+    if (info && info.diretos === 0) return;
+
+    area.innerHTML =
+      '<div class="aviso aviso-info">Carregando figurinhas desta pasta…</div>';
+
+    carregarImagensDiretas(pasta)
+      .then(function (imagens) {
+        if (!imagens.length) {
+          area.innerHTML = '';
+          return;
+        }
+
+        area.innerHTML =
+          '<h2 class="secao-titulo" style="margin-top:30px;">' +
+            'Figurinhas desta pasta' +
+          '</h2>' +
+          gradeDeFiguras(imagens);
+      })
+      .catch(function (erro) {
+        console.error('[Figuras diretas] falha:', erro);
+        area.innerHTML = '';
+      });
+  }
+
   function carregarImagensStorage(pasta) {
     var CFG = window.STICKER_CONFIG || {};
 
@@ -866,8 +1361,8 @@ function listarPastaStorage(pasta, token, offset) {
     if (!itens.length) {
       return '<div class="vazio-busca">' +
         '<span class="vazio-emoji" aria-hidden="true">🔎</span>' +
-        '<strong>Nada encontrado</strong>' +
-        '<span>Tente outro termo de busca.</span>' +
+        '<strong class="vazio-titulo">Nenhuma categoria encontrada.</strong>' +
+        '<span class="vazio-dica">Tente outro termo de busca.</span>' +
       '</div>';
     }
 
@@ -876,8 +1371,31 @@ function listarPastaStorage(pasta, token, offset) {
     '</div>';
   }
 
+  function avisoCategorias() {
+    if (estado.carregandoCategorias) {
+      return '<div class="aviso aviso-info">Carregando todas as categorias…</div>';
+    }
+
+    if (estado.erroCategorias) {
+      return '<div class="aviso aviso-erro">' +
+        'Não foi possível carregar a lista completa de categorias. ' +
+        'Suas coleções principais continuam disponíveis.' +
+      '</div>';
+    }
+
+    return '';
+  }
+
+  function textoResultado(todos, filtrados) {
+    return '<span>' +
+      (estado.busca
+        ? filtrados.length + ' resultado(s)'
+        : todos.length + ' categorias') +
+    '</span>';
+  }
+
   function paginaInicio() {
-    var todos = catalogo();
+    var todos = catalogoCompleto();
     var filtrados = filtrar(todos, estado.busca);
 
     return '<div class="pagina pagina-inicio">' +
@@ -887,10 +1405,13 @@ function listarPastaStorage(pasta, token, offset) {
         '<p class="pagina-intro">Escolha uma coleção ou pesquise pelo que você precisa.</p>' +
       '</header>' +
       blocoBusca() +
-      '<div class="resultado-busca">' +
-        '<span>' + (estado.busca ? filtrados.length + ' resultado(s)' : todos.length + ' coleções') + '</span>' +
+      '<div id="aviso-categorias">' + avisoCategorias() + '</div>' +
+      '<div class="resultado-busca" id="resultado-busca">' +
+        textoResultado(todos, filtrados) +
       '</div>' +
-      gradeCategorias(filtrados) +
+      '<div id="grade-categorias-area">' +
+        gradeCategorias(filtrados) +
+      '</div>' +
     '</div>';
   }
 
@@ -950,6 +1471,18 @@ function listarPastaStorage(pasta, token, offset) {
     } else {
       el['conteudo'].innerHTML = paginaInicio();
       prepararBusca();
+      ligarCliquesCategorias(
+        document.getElementById('grade-categorias-area')
+      );
+
+      /* Uma chamada por sessão; depois vem do cache. */
+      if (!estado.categoriasCarregadas && !estado.carregandoCategorias) {
+        carregarCategoriasRemotas().then(function () {
+          if (estado.atualizarGradeInicio) {
+            estado.atualizarGradeInicio();
+          }
+        });
+      }
     }
 
     atualizarNav(rota.id);
@@ -974,34 +1507,43 @@ function listarPastaStorage(pasta, token, offset) {
 
     if (!campo) return;
 
+    /* Redesenha SÓ a grade. O campo de busca nunca é recriado:
+       foco, cursor e teclado do celular ficam intactos.
+       O filtro roda em memória sobre as 433 pastas. */
+    function atualizarGrade() {
+      var area = document.getElementById('grade-categorias-area');
+      if (!area) return;
+
+      var todos = catalogoCompleto();
+      var filtrados = filtrar(todos, estado.busca);
+
+      area.innerHTML = gradeCategorias(filtrados);
+      ligarCliquesCategorias(area);
+
+      var contador = document.getElementById('resultado-busca');
+      if (contador) contador.innerHTML = textoResultado(todos, filtrados);
+
+      var aviso = document.getElementById('aviso-categorias');
+      if (aviso) aviso.innerHTML = avisoCategorias();
+    }
+
+    estado.atualizarGradeInicio = atualizarGrade;
+
+    var timer = null;
+
     campo.addEventListener('input', function () {
       estado.busca = campo.value;
-      render();
 
-      var novoCampo = document.getElementById('campo-busca');
-
-      if (novoCampo) {
-        novoCampo.focus();
-
-        try {
-          novoCampo.setSelectionRange(
-            novoCampo.value.length,
-            novoCampo.value.length
-          );
-        } catch (e) {}
-      }
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(atualizarGrade, 90);
     });
 
     if (limpar) {
       limpar.addEventListener('click', function () {
         estado.busca = '';
-        render();
-
-        var novoCampo = document.getElementById('campo-busca');
-
-        if (novoCampo) {
-          novoCampo.focus();
-        }
+        campo.value = '';
+        atualizarGrade();
+        campo.focus();
       });
     }
   }
