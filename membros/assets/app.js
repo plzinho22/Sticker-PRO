@@ -38,6 +38,7 @@
     /* pastas do bucket, vindas da RPC */
     categoriasRemotas: [],
     mapaCategorias: {},
+    gruposPorChave: {},
     carregandoCategorias: false,
     categoriasCarregadas: false,
     erroCategorias: null,
@@ -134,7 +135,7 @@ function esconder(no) {
     if (!t) return itens;
     var palavras = t.split(' ');
     return itens.filter(function (item) {
-      var alvo = normalizar(item.nome + ' ' + item.nota + ' ' + item.secaoTitulo);
+      var alvo = normalizar(item.nome + ' ' + item.nota + ' ' + item.secaoTitulo + ' ' + (item.alt || ''));
       return palavras.every(function (p) { return alvo.indexOf(p) > -1; });
     });
   }
@@ -169,6 +170,12 @@ function esconder(no) {
       '<span class="cartao-nota">' + esc(item.nota) + '</span>' +
       '<span class="selo selo-ok">Abrir coleção</span>' +
       '<span class="cartao-acao">Ver figurinhas <span aria-hidden="true">→</span></span>';
+
+    /* Card de GRUPO: abre a segunda camada com os estilos. */
+    if (item.grupo) {
+      return '<button class="cartao" type="button"' +
+        ' data-grupo="' + esc(item.grupo) + '">' + miolo + '</button>';
+    }
 
     /* Card do bucket: sem id, abre pelo caminho.
        Os 8 cards manuais continuam usando abrirColecao(). */
@@ -369,7 +376,9 @@ function esconder(no) {
     '<button type="button" class="pasta-card" ' +
       'data-caminho="' + esc(pastaItem.caminho) + '">' +
 
-      '<span class="pasta-icone">📁</span>' +
+      '<span class="pasta-icone">' +
+        esc(obterEmojiCategoria(pastaItem.nome, pastaItem.caminho)) +
+      '</span>' +
 
       '<span class="pasta-nome">' +
         esc(pastaItem.nome) +
@@ -462,7 +471,7 @@ function esconder(no) {
     '<div class="pagina entra">' +
       '<header class="pagina-topo">' +
         '<button type="button" class="voltar" id="btn-voltar-pasta-direta">← Voltar</button>' +
-        '<span class="eyebrow">📁</span>' +
+        '<span class="eyebrow">' + esc(obterEmojiCategoria(nome, caminho)) + '</span>' +
         '<h1 class="pagina-titulo">' + esc(nome) + '</h1>' +
         '<p class="pagina-intro">Escolha uma figurinha para usar no seu Story.</p>' +
       '</header>' +
@@ -777,7 +786,10 @@ function esconder(no) {
   }
 
   /* Catálogo manual (content.js) PRIMEIRO — mantém capa, emoji,
-     link e nota. Depois as pastas do bucket, sem duplicar. */
+     link e nota. Depois os GRUPOS virtuais das pastas do bucket.
+     Nenhum caminho é descartado: grupos com um caminho viram card
+     direto, grupos com vários viram card de segunda camada, e as
+     pastas profundas (nível 3-4) seguem pesquisáveis. */
   function catalogoCompleto() {
     var manuais = catalogo();
     var vistos = {};
@@ -786,34 +798,66 @@ function esconder(no) {
       if (item.pasta) vistos[normalizar(item.pasta)] = true;
     });
 
-    var remotos = [];
+    /* remove só o que já é card manual — nada mais */
+    var remotos = estado.categoriasRemotas.filter(function (cat) {
+      return !vistos[normalizar(cat.caminho)];
+    });
 
-    estado.categoriasRemotas.forEach(function (cat) {
-      var chave = normalizar(cat.caminho);
+    var montado = montarGrupos(remotos);
+    guardarGrupos(montado.grupos);
 
-      if (vistos[chave]) return;
-      vistos[chave] = true;
+    var entradas = [];
 
-      remotos.push({
-        id: '',
-        nome: cat.nome,
-        /* o caminho do pai vira a nota: dá contexto no card
-           e ainda entra na busca, já que filtrar() lê a nota */
-        nota: cat.pai ? cat.pai.split('/').join(' / ') : '',
-        emoji: '📁',
-        pasta: cat.caminho,
-        linkLocal: '',
-        secao: 'storage',
-        secaoTitulo: 'Categorias',
-        remoto: true
+    montado.grupos.forEach(function (g) {
+      var alt = g.variantes.map(function (v) {
+        return v.nome + ' ' + v.nomeOriginal + ' ' + v.caminho;
+      }).join(' ');
+
+      /* Um caminho só: card direto, exatamente como antes. */
+      if (g.variantes.length === 1) {
+        var v = g.variantes[0];
+        var pai = v.caminho.split('/').slice(0, -1).join(' / ');
+
+        entradas.push({
+          id: '', nome: g.nome, nota: pai, emoji: g.emoji,
+          pasta: v.caminho, linkLocal: '',
+          secao: 'storage', secaoTitulo: 'Categorias',
+          remoto: true, alt: alt, caminhos: g.caminhos
+        });
+        return;
+      }
+
+      /* Vários caminhos: abre a tela do grupo. */
+      entradas.push({
+        id: '', nome: g.nome,
+        nota: g.variantes.length + ' estilos disponíveis',
+        emoji: g.emoji, pasta: '', linkLocal: '',
+        secao: 'storage', secaoTitulo: 'Categorias',
+        grupo: g.chave, alt: alt, caminhos: g.caminhos
       });
     });
 
-    remotos.sort(function (a, b) {
+    entradas.sort(function (a, b) {
       return a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' });
     });
 
-    return manuais.concat(remotos);
+    /* Pastas de nível 3 e 4: continuam acessíveis e pesquisáveis,
+       mas fora do paredão da home (aparecem ao buscar). */
+    var fundas = montado.profundas.map(function (cat) {
+      return {
+        id: '', nome: cat.nome,
+        nota: cat.pai ? cat.pai.split('/').join(' / ') : '',
+        emoji: obterEmojiCategoria(cat.nome, cat.caminho),
+        pasta: cat.caminho, linkLocal: '',
+        secao: 'storage', secaoTitulo: 'Categorias',
+        remoto: true, profunda: true,
+        alt: cat.caminho, caminhos: [cat.caminho]
+      };
+    }).sort(function (a, b) {
+      return a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' });
+    });
+
+    return manuais.concat(entradas).concat(fundas);
   }
 
   /* ==========================================================
@@ -832,7 +876,7 @@ function esconder(no) {
       /* Container OU mista -> navegador de pastas.
          O navegador mostra as imagens diretas, se houver. */
       if (info.subpastas > 0) {
-        abrirNavegadorDePastas({ nome: nome, emoji: '📁' }, caminho);
+        abrirNavegadorDePastas({ nome: nome, emoji: obterEmojiCategoria(nome, caminho) }, caminho);
         return;
       }
 
@@ -847,7 +891,7 @@ function esconder(no) {
       '<div class="pagina entra">' +
         '<header class="pagina-topo">' +
           '<button type="button" class="voltar" id="btn-voltar-abrindo">← Voltar</button>' +
-          '<span class="eyebrow">📁</span>' +
+          '<span class="eyebrow">' + esc(obterEmojiCategoria(nome, caminho)) + '</span>' +
           '<h1 class="pagina-titulo">' + esc(nome) + '</h1>' +
         '</header>' +
         '<div class="aviso aviso-info">Abrindo…</div>' +
@@ -862,7 +906,7 @@ function esconder(no) {
     carregarPastasStorage(caminho)
       .then(function (subpastas) {
         if (subpastas && subpastas.length) {
-          abrirNavegadorDePastas({ nome: nome, emoji: '📁' }, caminho);
+          abrirNavegadorDePastas({ nome: nome, emoji: obterEmojiCategoria(nome, caminho) }, caminho);
           return;
         }
 
@@ -876,17 +920,449 @@ function esconder(no) {
 
   window.abrirCategoria = abrirCategoriaPorCaminho;
 
+  /* ==========================================================
+     EMOJIS POR ASSUNTO
+     Substitui o 📁 genérico. Puramente cosmético: não toca
+     em caminho, arquivo ou navegação.
+     ========================================================== */
+
+  var EMOJIS_CATEGORIA = [
+    ['3d mkt', '📣'], ['3d', '✨'],
+    ['academia', '🏋️'], ['fitness', '💪'], ['treino', '💪'],
+    ['musculacao', '🏋️'], ['crossfit', '🏋️'],
+    ['acessorio', '👜'], ['semijoia', '💎'], ['joia', '💎'],
+    ['bolsa', '👜'], ['oculos', '🕶️'],
+    ['acupuntura', '🪷'], ['advocacia', '⚖️'], ['advogad', '⚖️'],
+    ['juridic', '⚖️'], ['direito', '⚖️'],
+    ['agenda', '📅'], ['agronomia', '🌱'], ['agro', '🌾'],
+    ['agua', '💧'], ['artesanato', '🧶'], ['croche', '🧶'],
+    ['tricot', '🧶'], ['costura', '🧵'],
+    ['celular', '📱'], ['autocuidado', '🧖‍♀️'], ['barbearia', '💈'],
+    ['barbeiro', '💈'], ['blogueira', '💄'], ['bolo', '🧁'],
+    ['confeitaria', '🧁'], ['doce', '🍬'], ['padaria', '🥐'],
+    ['bom dia', '☀️'], ['boa noite', '🌙'], ['boa tarde', '🌇'],
+    ['cafe', '☕'], ['caixinha', '💬'], ['carnaval', '🎭'],
+    ['catolic', '🙏'], ['cha ', '🍵'], ['chimarrao', '🧉'],
+    ['copa', '⚽'], ['futebol', '⚽'], ['corretor', '🏠'],
+    ['imovel', '🏠'], ['imobiliaria', '🏠'], ['corrida', '🏃'],
+    ['cristao', '✝️'], ['crista', '✝️'], ['biblia', '📖'],
+    ['danca', '💃'], ['dentista', '🦷'], ['odonto', '🦷'],
+    ['educador', '👩‍🏫'], ['professor', '👩‍🏫'], ['escola', '🎒'],
+    ['estudo', '📚'], ['emoji', '😀'], ['enfermagem', '🩺'],
+    ['enfermeir', '🩺'], ['medic', '🩺'], ['saude', '🩺'],
+    ['estetica', '💆‍♀️'], ['aniversario', '🎂'], ['ferias', '✈️'],
+    ['flor', '🌸'], ['frase', '💬'], ['marketing', '📈'],
+    ['maternidade', '👶'], ['bebe', '👶'], ['infantil', '🧸'],
+    ['maquiagem', '💄'], ['maquiador', '💄'], ['mes', '📅'],
+    ['natal', '🎄'], ['nutricao', '🥗'], ['nutricionista', '🥗'],
+    ['pascoa', '🐰'], ['pet', '🐾'], ['cachorro', '🐶'],
+    ['gato', '🐱'], ['pilates', '🧘‍♀️'], ['yoga', '🧘‍♀️'],
+    ['pizza', '🍕'], ['praia', '🏖️'], ['psicolog', '🧠'],
+    ['terapia', '🧠'], ['salao', '💇‍♀️'], ['cabelo', '💇‍♀️'],
+    ['cabeleireir', '💇‍♀️'], ['unha', '💅'], ['manicure', '💅'],
+    ['nail', '💅'], ['venda', '💰'], ['dinheiro', '💰'],
+    ['financ', '💰'], ['viagem', '✈️'], ['sobrancelha', '👁️'],
+    ['lash', '👁️'], ['cilio', '👁️'], ['depilacao', '🪒'],
+    ['massagem', '💆‍♀️'], ['moda', '👗'], ['roupa', '👗'],
+    ['lingerie', '🎀'], ['festa', '🎉'], ['casamento', '💍'],
+    ['noiva', '👰'], ['amor', '❤️'], ['namorado', '❤️'],
+    ['mae', '💐'], ['mulher', '💐'], ['pai', '👔'],
+    ['junina', '🌽'], ['halloween', '🎃'], ['ano novo', '🎆'],
+    ['black friday', '🛍️'], ['achadinho', '🛍️'], ['promocao', '🏷️'],
+    ['delivery', '🛵'], ['comida', '🍽️'], ['restaurante', '🍽️'],
+    ['fruta', '🍓'], ['sorvete', '🍦'], ['drink', '🍹'],
+    ['vinho', '🍷'], ['carro', '🚗'], ['moto', '🏍️'],
+    ['tecnolog', '💻'], ['design', '🎨'], ['arte', '🎨'],
+    ['musica', '🎵'], ['foto', '📷'], ['video', '🎬'],
+    ['livro', '📚'], ['seta', '➡️'], ['coracao', '❤️'],
+    ['estrela', '⭐'], ['borboleta', '🦋'], ['sol', '☀️'],
+    ['lua', '🌙'], ['nuvem', '☁️'], ['chuva', '🌧️'],
+    ['inverno', '❄️'], ['verao', '🌞'], ['outono', '🍂'],
+    ['primavera', '🌷'], ['planta', '🪴'], ['natureza', '🌿'],
+    ['icone', '⭐'], ['minimalista', '🤍'], ['premium', '🎀'],
+    ['sao miguel', '🕊️'], ['anjo', '🕊️'], ['oracao', '🙏']
+  ];
+
+  function obterEmojiCategoria(nome, caminho) {
+    var alvo = normalizar((nome || '') + ' ' + (caminho || ''));
+
+    for (var i = 0; i < EMOJIS_CATEGORIA.length; i++) {
+      if (alvo.indexOf(EMOJIS_CATEGORIA[i][0]) > -1) {
+        return EMOJIS_CATEGORIA[i][1];
+      }
+    }
+
+    return '✨';
+  }
+
+  /* ==========================================================
+     AGRUPAMENTO VIRTUAL
+     Camada 100% de apresentação. Nenhum caminho é criado,
+     alterado ou descartado: os caminhos originais são apenas
+     reagrupados sob um card comum.
+     ========================================================== */
+
+  /* Chave de comparação: sem acento, sem caixa, sem hífen
+     e sem underscore. "Acessórios" e "Acessorios" batem. */
+  function chaveDeGrupo(nome) {
+    return normalizar(nome)
+      .replace(/[_\-]+/g, ' ')
+      .replace(/[^a-z0-9 ]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  /* Une singular/plural apenas em palavras longas.
+     "brancas"->"branca" e "branco"->"branco" continuam
+     separados de propósito. */
+  function chaveSingular(chave) {
+    return chave.split(' ').map(function (p) {
+      if (p.length >= 5 && p.charAt(p.length - 1) === 's') {
+        return p.slice(0, -1);
+      }
+      return p;
+    }).join(' ');
+  }
+
+  /* Rótulo da biblioteca de origem (o primeiro nível do caminho). */
+  function rotuloOrigem(caminho) {
+    var raiz = String(caminho).split('/')[0];
+    var n = normalizar(raiz);
+
+    if (n === 'figurinhas') return { nome: 'Normais', emoji: '✨' };
+    if (n === 'figurinha minimalista') return { nome: 'Minimalistas', emoji: '🤍' };
+    if (n === 'icones') return { nome: 'Ícones', emoji: '⭐' };
+    if (n === 'figurinhas premium') return { nome: 'Premium', emoji: '🎀' };
+
+    return { nome: raiz, emoji: obterEmojiCategoria(raiz, caminho) };
+  }
+
+  /* ----------------------------------------------------------
+     CHAVE DE AGRUPAMENTO — BASEADA NO CAMINHO COMPLETO
+     ----------------------------------------------------------
+     Duas pastas só entram no mesmo grupo quando a TRILHA a
+     partir da biblioteca de origem é idêntica. O nome final
+     sozinho NUNCA decide.
+
+       Figurinhas/Acessorios          -> trilha "acessorio"
+       Figurinha minimalista/Acessorios -> trilha "acessorio"
+       => mesma trilha, bibliotecas diferentes: AGRUPA
+
+       Figurinhas/Abril               -> trilha "abril"
+       ICONES/Meses/Abril             -> trilha "meses/abril"
+       => trilhas diferentes: NÃO AGRUPA
+
+     Pastas de nível 1 (as próprias bibliotecas) recebem chave
+     exclusiva e nunca se fundem com nada.
+     ---------------------------------------------------------- */
+  function chaveDeCaminho(caminho) {
+    var partes = String(caminho).split('/');
+
+    /* raiz de biblioteca: chave única, jamais agrupa */
+    if (partes.length < 2) {
+      return 'raiz:' + chaveDeGrupo(partes[0]);
+    }
+
+    var trilha = partes.slice(1).map(function (p) {
+      return chaveSingular(chaveDeGrupo(p));
+    }).join('/');
+
+    if (!trilha) return 'raiz:' + chaveDeGrupo(partes[0]);
+
+    return 'trilha:' + trilha;
+  }
+
+  /* Biblioteca de origem normalizada (primeiro nível). */
+  function raizDoCaminho(caminho) {
+    return chaveDeGrupo(String(caminho).split('/')[0]);
+  }
+
+  /* ----------------------------------------------------------
+     CONJUNTO EXPLÍCITO DE VARIANTES
+     ----------------------------------------------------------
+     Só estas duas bibliotecas podem se combinar num mesmo card,
+     porque são o mesmo acervo em dois estilos.
+
+       Figurinhas            -> Normais
+       Figurinha minimalista -> Minimalistas
+
+     ICONES e Figurinhas PREMIUM ficam de fora de propósito:
+     não são "estilos" da biblioteca normal, são acervos
+     próprios. Qualquer outra combinação de raízes NÃO agrupa.
+     ---------------------------------------------------------- */
+  var RAIZES_VARIANTES = {
+    'figurinhas': true,
+    'figurinha minimalista': true
+  };
+
+  function raizPodeVariar(caminho) {
+    return RAIZES_VARIANTES[raizDoCaminho(caminho)] === true;
+  }
+
+  /* Monta os grupos a partir das categorias remotas.
+     REGRA DE SEGURANÇA: agrupa apenas caminhos com a MESMA
+     trilha relativa em bibliotecas DIFERENTES. Na dúvida,
+     mantém separado. */
+  function montarGrupos(remotos) {
+    var rasas = [];
+    var profundas = [];
+
+    remotos.forEach(function (cat) {
+      if (cat.nivel <= 2) rasas.push(cat);
+      else profundas.push(cat);
+    });
+
+    /* Agrupamento por trilha completa. Determinístico:
+       as chaves são percorridas em ordem alfabética. */
+    var porChave = {};
+
+    rasas.forEach(function (cat) {
+      var k = chaveDeCaminho(cat.caminho);
+      if (!porChave[k]) porChave[k] = [];
+      porChave[k].push(cat);
+    });
+
+    /* AGRUPAMENTO PARCIAL.
+       Dentro de uma mesma trilha:
+         - raízes fora da lista branca NUNCA entram em grupo e
+           viram cards individuais, sem contaminar o resto;
+         - entre as raízes permitidas, cada raiz pode aparecer
+           no máximo uma vez; se a mesma raiz tiver dois
+           caminhos, essa raiz é ambígua e todos os seus
+           caminhos viram cards individuais;
+         - o grupo se forma com as raízes permitidas que
+           sobrarem, desde que restem pelo menos duas.
+       Em qualquer cenário, todo caminho tem destino. */
+    var porSingular = {};
+
+    /* Desempate sempre pelo caminho CRU (não normalizado):
+       "Cafe" e "Café" são pastas físicas distintas e
+       normalizar() as tornaria idênticas, perdendo uma. */
+    function cardIndividual(k, cat) {
+      porSingular[k + '|' + cat.caminho] = [cat];
+    }
+
+    Object.keys(porChave).sort().forEach(function (k) {
+      var membros = porChave[k];
+
+      if (membros.length < 2) {
+        porSingular[k] = membros;
+        return;
+      }
+
+      var permitidos = [];
+
+      membros.forEach(function (cat) {
+        if (raizPodeVariar(cat.caminho)) permitidos.push(cat);
+        else cardIndividual(k, cat);   /* PREMIUM, ICONES, etc. */
+      });
+
+      /* Uma raiz permitida com mais de um caminho é ambígua:
+         não dá para saber qual representa aquela biblioteca. */
+      var porRaiz = {};
+
+      permitidos.forEach(function (cat) {
+        var r = raizDoCaminho(cat.caminho);
+        if (!porRaiz[r]) porRaiz[r] = [];
+        porRaiz[r].push(cat);
+      });
+
+      var elegiveis = [];
+
+      Object.keys(porRaiz).sort().forEach(function (r) {
+        if (porRaiz[r].length === 1) elegiveis.push(porRaiz[r][0]);
+        else porRaiz[r].forEach(function (cat) { cardIndividual(k, cat); });
+      });
+
+      /* Precisa de pelo menos duas bibliotecas para haver grupo. */
+      if (elegiveis.length >= 2) {
+        porSingular[k] = elegiveis;
+        return;
+      }
+
+      elegiveis.forEach(function (cat) { cardIndividual(k, cat); });
+    });
+
+    var grupos = [];
+
+    Object.keys(porSingular).sort().forEach(function (ks) {
+      var membros = porSingular[ks];
+
+      /* Nome exibido: o da variante com mais arquivos.
+         Empate resolvido alfabeticamente, para ser estável. */
+      var principal = membros.slice().sort(function (a, b) {
+        if (b.total !== a.total) return b.total - a.total;
+        return a.caminho.localeCompare(b.caminho, 'pt-BR');
+      })[0];
+
+      var variantes = membros.slice().sort(function (a, b) {
+        return a.caminho.localeCompare(b.caminho, 'pt-BR');
+      }).map(function (cat) {
+        var org = rotuloOrigem(cat.caminho);
+        return {
+          nome: org.nome,
+          emoji: org.emoji,
+          caminho: cat.caminho,
+          nomeOriginal: cat.nome,
+          total: cat.total
+        };
+      });
+
+      grupos.push({
+        chave: ks,
+        nome: principal.nome,
+        emoji: obterEmojiCategoria(principal.nome, principal.caminho),
+        variantes: variantes,
+        caminhos: variantes.map(function (v) { return v.caminho; }),
+        total: membros.reduce(function (s, c) { return s + (c.total || 0); }, 0)
+      });
+    });
+
+    return { grupos: grupos, profundas: profundas };
+  }
+
+  /* Índice por chave, para o clique abrir o grupo certo. */
+  function guardarGrupos(grupos) {
+    var mapa = {};
+    grupos.forEach(function (g) { mapa[g.chave] = g; });
+    estado.gruposPorChave = mapa;
+  }
+
+  /* ==========================================================
+     TELA DE UM GRUPO
+     Lista as variantes. Cada uma aponta para o caminho
+     ORIGINAL, sem alteração alguma.
+     ========================================================== */
+
+  function abrirGrupo(chave) {
+    var grupo = estado.gruposPorChave[chave];
+
+    if (!grupo) {
+      console.error('[Grupo] não encontrado:', chave);
+      render();
+      return;
+    }
+
+    el['conteudo'].innerHTML =
+      '<div class="pagina entra">' +
+        '<header class="pagina-topo">' +
+          '<button type="button" class="voltar" id="btn-voltar-grupo">← Voltar</button>' +
+          '<span class="eyebrow">' + esc(grupo.emoji) + '</span>' +
+          '<h1 class="pagina-titulo">' + esc(grupo.nome) + '</h1>' +
+          '<p class="pagina-intro">Escolha o estilo.</p>' +
+        '</header>' +
+        '<div class="grade-categorias" id="grade-grupo">' +
+          grupo.variantes.map(function (v) {
+            return '<button class="cartao" type="button"' +
+              ' data-caminho="' + esc(v.caminho) + '"' +
+              ' data-nome="' + esc(grupo.nome + ' · ' + v.nome) + '">' +
+              '<span class="cartao-glifo" aria-hidden="true">' + esc(v.emoji) + '</span>' +
+              '<span class="cartao-nome">' + esc(v.nome) + '</span>' +
+              '<span class="cartao-nota">' + esc(v.caminho) + '</span>' +
+              '<span class="selo selo-ok">Abrir coleção</span>' +
+              '<span class="cartao-acao">Ver figurinhas <span aria-hidden="true">→</span></span>' +
+            '</button>';
+          }).join('') +
+        '</div>' +
+      '</div>';
+
+    var voltar = document.getElementById('btn-voltar-grupo');
+
+    if (voltar) {
+      voltar.addEventListener('click', function () { render(); });
+    }
+
+    ligarCliquesCategorias(document.getElementById('grade-grupo'));
+  }
+
+  window.abrirGrupo = abrirGrupo;
+
+  /* ==========================================================
+     VALIDAÇÃO DE COBERTURA
+     Confere que todo caminho vindo da RPC continua
+     representado em algum card. Roda no console.
+     ========================================================== */
+
+  function validarCobertura(remotos, entradas) {
+    var origem = {};
+    remotos.forEach(function (c) { origem[c.caminho] = true; });
+
+    var cobertos = {};
+    entradas.forEach(function (e) {
+      /* qualquer entrada com pasta cobre aquele caminho —
+         inclusive os 8 cards manuais */
+      if (e.pasta) cobertos[e.pasta] = true;
+      (e.caminhos || []).forEach(function (c) { cobertos[c] = true; });
+    });
+
+    var perdidos = Object.keys(origem).filter(function (c) {
+      return !cobertos[c];
+    });
+
+    var gruposMulti = 0;
+    var variantes = 0;
+
+    entradas.forEach(function (e) {
+      if (e.grupo) {
+        gruposMulti++;
+        variantes += (e.caminhos || []).length;
+      }
+    });
+
+    var relatorio = {
+      /* --- o que ESTE código realmente conferiu --- */
+      caminhosDaRPC: Object.keys(origem).length,
+      caminhosRepresentados: Object.keys(cobertos).length,
+      caminhosPerdidos: perdidos.length,
+      perdidos: perdidos,
+      gruposComVariasVariantes: gruposMulti,
+      variantesDentroDeGrupos: variantes,
+      cardsNaBiblioteca: entradas.length,
+
+      /* --- o que ESTE código NÃO conferiu --- */
+      arquivosIndividuaisValidados: 0,
+      totalFisicoDeArquivos: 'não consultado por este código',
+      aviso: 'Esta validação cobre CAMINHOS de pasta, não arquivos. ' +
+             'Nenhum arquivo individual foi contado ou verificado. ' +
+             'Para o total físico, consulte o Storage diretamente.'
+    };
+
+    if (perdidos.length) {
+      console.error('[Cobertura] CAMINHOS SEM DESTINO:', perdidos);
+    }
+
+    return relatorio;
+  }
+
+  window.validarCoberturaBiblioteca = function () {
+    var entradas = catalogoCompleto();
+    var r = validarCobertura(estado.categoriasRemotas, entradas);
+
+    console.log('[Cobertura] caminhos da RPC:      ', r.caminhosDaRPC);
+    console.log('[Cobertura] caminhos representados:', r.caminhosRepresentados);
+    console.log('[Cobertura] caminhos perdidos:    ', r.caminhosPerdidos);
+    console.log('[Cobertura] grupos com variantes: ', r.gruposComVariasVariantes);
+    console.log('[Cobertura] variantes nos grupos: ', r.variantesDentroDeGrupos);
+    console.warn('[Cobertura] ATENÇÃO: ' + r.aviso);
+
+    return r;
+  };
+
   function ligarCliquesCategorias(area) {
     if (!area) return;
 
-    var botoes = area.querySelectorAll('.cartao[data-caminho]');
-
-    botoes.forEach(function (botao) {
+    area.querySelectorAll('.cartao[data-caminho]').forEach(function (botao) {
       botao.addEventListener('click', function () {
         abrirCategoriaPorCaminho(
           botao.getAttribute('data-caminho'),
           botao.getAttribute('data-nome')
         );
+      });
+    });
+
+    area.querySelectorAll('.cartao[data-grupo]').forEach(function (botao) {
+      botao.addEventListener('click', function () {
+        abrirGrupo(botao.getAttribute('data-grupo'));
       });
     });
   }
@@ -1396,7 +1872,14 @@ function listarPastaStorage(pasta, token, offset) {
 
   function paginaInicio() {
     var todos = catalogoCompleto();
-    var filtrados = filtrar(todos, estado.busca);
+
+    /* Sem busca, a home mostra as categorias principais.
+       Com busca, tudo entra — inclusive níveis 3 e 4. */
+    var base = estado.busca
+      ? todos
+      : todos.filter(function (i) { return !i.profunda; });
+
+    var filtrados = filtrar(base, estado.busca);
 
     return '<div class="pagina pagina-inicio">' +
       '<header class="pagina-topo">' +
@@ -1407,7 +1890,7 @@ function listarPastaStorage(pasta, token, offset) {
       blocoBusca() +
       '<div id="aviso-categorias">' + avisoCategorias() + '</div>' +
       '<div class="resultado-busca" id="resultado-busca">' +
-        textoResultado(todos, filtrados) +
+        textoResultado(base, filtrados) +
       '</div>' +
       '<div id="grade-categorias-area">' +
         gradeCategorias(filtrados) +
@@ -1515,13 +1998,18 @@ function listarPastaStorage(pasta, token, offset) {
       if (!area) return;
 
       var todos = catalogoCompleto();
-      var filtrados = filtrar(todos, estado.busca);
+
+      var base = estado.busca
+        ? todos
+        : todos.filter(function (i) { return !i.profunda; });
+
+      var filtrados = filtrar(base, estado.busca);
 
       area.innerHTML = gradeCategorias(filtrados);
       ligarCliquesCategorias(area);
 
       var contador = document.getElementById('resultado-busca');
-      if (contador) contador.innerHTML = textoResultado(todos, filtrados);
+      if (contador) contador.innerHTML = textoResultado(base, filtrados);
 
       var aviso = document.getElementById('aviso-categorias');
       if (aviso) aviso.innerHTML = avisoCategorias();
