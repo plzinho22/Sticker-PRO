@@ -212,6 +212,24 @@ function esconder(no) {
       });
     }
 
+        var colecoesGrandes = [
+      'fig-geral',
+      'min-geral',
+      'icones-geral'
+    ];
+
+    if (colecoesGrandes.indexOf(item.id) !== -1) {
+      console.log(
+        '[Galeria] Coleção grande detectada:',
+        item.id,
+        item.nome,
+        pasta
+      );
+
+      abrirNavegadorDePastas(item, pasta);
+      return;
+    }
+
     carregarImagensStorage(pasta)
       .then(function (imagens) {
         var status = document.getElementById('galeria-status');
@@ -257,7 +275,6 @@ function esconder(no) {
         }
       });
   }
-
   function carregarImagensStorage(pasta) {
     var CFG = window.STICKER_CONFIG || {};
 
