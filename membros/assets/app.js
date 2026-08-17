@@ -35,6 +35,12 @@
     carregandoDados: false, erroDados: null,
     busca: '',
 
+    /* Fluxo de recuperação de senha via link do Supabase.
+       O auth.js usa PKCE, então o link chega com ?code=... e
+       o evento PASSWORD_RECOVERY é disparado quando a sessão fica pronta. */
+    recuperacaoSenha: false,
+    aguardandoRecuperacao: false,
+
     /* pastas do bucket, vindas da RPC */
     categoriasRemotas: [],
     mapaCategorias: {},
@@ -2478,22 +2484,75 @@ function listarPastaStorage(pasta, token, offset) {
     el['link-recuperar'].addEventListener(
       'click',
       function (evento) {
-
         evento.preventDefault();
 
-        esconder(el['tela-login']);
-        mostrar(el['tela-redefinir']);
+        var email = el['email']
+          ? el['email'].value.trim().toLowerCase()
+          : '';
 
-        if (el['retorno-redefinir']) {
-          el['retorno-redefinir'].textContent = '';
+        if (!email) {
+          if (el['retorno-login']) {
+            el['retorno-login'].textContent =
+              'Digite primeiro o e-mail usado na compra para receber o link de acesso.';
+          }
+          if (el['email']) el['email'].focus();
+          return;
         }
 
-        if (el['nova-senha']) {
-          el['nova-senha'].value = '';
+        if (el['retorno-login']) {
+          el['retorno-login'].textContent = 'Enviando link para seu e-mail...';
         }
 
+        Promise.resolve(Auth.recuperarSenha(email))
+          .then(function (resultado) {
+            if (!resultado || resultado.ok === false) {
+              throw new Error(
+                resultado && resultado.erro
+                  ? resultado.erro
+                  : 'Não foi possível enviar o link.'
+              );
+            }
+
+            esconder(el['tela-login']);
+            mostrar(el['tela-redefinir']);
+
+            if (el['retorno-redefinir']) {
+              el['retorno-redefinir'].textContent =
+                'Link enviado para ' + email + '. Abra o e-mail e toque no link para escolher sua senha.';
+            }
+
+            if (el['nova-senha']) {
+              el['nova-senha'].value = '';
+            }
+          })
+          .catch(function (erro) {
+            console.error('[Recuperação] erro:', erro);
+            if (el['retorno-login']) {
+              el['retorno-login'].textContent =
+                erro.message || 'Não foi possível enviar o link. Tente novamente.';
+            }
+          });
       }
     );
+  }
+
+  function abrirRedefinicaoSenha(mensagem) {
+    esconder(el['splash']);
+    esconder(el['app']);
+    esconder(el['tela-login']);
+    esconder(el['tela-negado']);
+    esconder(el['tela-bloqueio']);
+
+    mostrar(el['tela-redefinir']);
+
+    if (el['retorno-redefinir']) {
+      el['retorno-redefinir'].textContent = mensagem || '';
+    }
+
+    if (el['nova-senha']) {
+      el['nova-senha'].value = '';
+      setTimeout(function () { el['nova-senha'].focus(); }, 50);
+    }
   }
 
   function iniciarRedefinicao() {
@@ -2513,12 +2572,10 @@ function listarPastaStorage(pasta, token, offset) {
             : '';
 
         if (!novaSenha || novaSenha.length < 6) {
-
           if (el['retorno-redefinir']) {
             el['retorno-redefinir'].textContent =
               'A senha precisa ter pelo menos 6 caracteres.';
           }
-
           return;
         }
 
@@ -2531,53 +2588,98 @@ function listarPastaStorage(pasta, token, offset) {
             'Salvando nova senha...';
         }
 
-        Promise.resolve(
-          Auth.definirSenha(novaSenha)
-        )
-        .then(function () {
+        Promise.resolve(Auth.definirSenha(novaSenha))
+          .then(function (resultado) {
+            /* auth.js devolve {ok:false, erro:...} em vez de rejeitar
+               em alguns erros. O app precisa respeitar esse retorno. */
+            if (!resultado || resultado.ok === false) {
+              throw new Error(
+                resultado && resultado.erro
+                  ? resultado.erro
+                  : 'Não foi possível alterar a senha.'
+              );
+            }
 
-          if (el['retorno-redefinir']) {
-            el['retorno-redefinir'].textContent =
-              'Senha alterada com sucesso. Entrando...';
-          }
+            if (el['retorno-redefinir']) {
+              el['retorno-redefinir'].textContent =
+                'Senha alterada com sucesso. Entrando...';
+            }
 
-          return Auth.sessao();
+            return Auth.sessao();
+          })
+          .then(function (usuario) {
+            var email =
+              usuario && usuario.email
+                ? usuario.email
+                : estado.email || '';
 
-        })
-        .then(function (usuario) {
+            estado.recuperacaoSenha = false;
+            estado.aguardandoRecuperacao = false;
 
-          var email =
-            usuario &&
-            usuario.email
-              ? usuario.email
-              : '';
+            return entrarComSessao(email);
+          })
+          .catch(function (erro) {
+            console.error('[Redefinição] erro:', erro);
 
-          return entrarComSessao(email);
-
-        })
-        .catch(function (erro) {
-
-          console.error(
-            '[Redefinição] erro:',
-            erro
-          );
-
-          if (el['retorno-redefinir']) {
-            el['retorno-redefinir'].textContent =
-              erro.message ||
-              'Não foi possível alterar a senha.';
-          }
-
-        })
-        .finally(function () {
-
-          if (el['btn-redefinir']) {
-            el['btn-redefinir'].disabled = false;
-          }
-
-        });
+            if (el['retorno-redefinir']) {
+              el['retorno-redefinir'].textContent =
+                erro.message ||
+                'Não foi possível alterar a senha. Peça um novo link.';
+            }
+          })
+          .finally(function () {
+            if (el['btn-redefinir']) {
+              el['btn-redefinir'].disabled = false;
+            }
+          });
       }
     );
+  }
+
+  function iniciarRecuperacaoSupabase() {
+    if (!Auth || typeof Auth.aoMudar !== 'function') {
+      return;
+    }
+
+    /* O auth.js já transforma ?code=... em sessão usando PKCE.
+       Aqui só reagimos ao evento correto e abrimos a tela de senha. */
+    Auth.aoMudar(function (evento, sessao) {
+      console.log('[Auth] evento:', evento);
+
+      if (evento === 'PASSWORD_RECOVERY') {
+        estado.recuperacaoSenha = true;
+        estado.aguardandoRecuperacao = false;
+        estado.email =
+          sessao && sessao.email
+            ? sessao.email
+            : estado.email;
+
+        abrirRedefinicaoSenha(
+          'Escolha uma nova senha para acessar sua conta.'
+        );
+        return;
+      }
+
+      /* Alguns fluxos PKCE entregam primeiro SIGNED_IN. Se a URL
+         ainda tiver ?code=, tratamos esse login como recuperação. */
+      if (evento === 'SIGNED_IN' && sessao && temCodigoDeRecuperacao()) {
+        estado.recuperacaoSenha = true;
+        estado.aguardandoRecuperacao = false;
+        estado.email = sessao.email || estado.email;
+        abrirRedefinicaoSenha(
+          'Escolha uma nova senha para acessar sua conta.'
+        );
+      }
+    });
+  }
+
+  function temCodigoDeRecuperacao() {
+    try {
+      var params = new URLSearchParams(window.location.search || '');
+      return !!params.get('code');
+    } catch (e) {
+      return false;
+    }
   }
 
   function iniciarBotoesNegado() {
@@ -2649,35 +2751,78 @@ function listarPastaStorage(pasta, token, offset) {
 
   function iniciarSessao() {
 
-    return Promise.resolve(
-      Auth.sessao()
-    )
-    .then(function (usuario) {
+    /* Quando o usuário chega pelo link de recuperação, o Supabase
+       pode ainda estar trocando ?code=... pela sessão. Não podemos
+       abrir o login nesse intervalo, senão a tela de redefinição
+       desaparece antes do evento PASSWORD_RECOVERY. */
+    if (temCodigoDeRecuperacao()) {
+      estado.aguardandoRecuperacao = true;
+      abrirRedefinicaoSenha('Validando seu link de recuperação...');
 
-      if (!usuario) {
+      return new Promise(function (resolve) {
+        var tentativas = 0;
+
+        function verificar() {
+          tentativas++;
+
+          Promise.resolve(Auth.sessao())
+            .then(function (usuario) {
+              if (usuario) {
+                estado.email = usuario.email || null;
+                estado.recuperacaoSenha = true;
+                estado.aguardandoRecuperacao = false;
+                abrirRedefinicaoSenha(
+                  'Escolha uma nova senha para acessar sua conta.'
+                );
+                resolve();
+                return;
+              }
+
+              if (tentativas < 20) {
+                setTimeout(verificar, 250);
+                return;
+              }
+
+              estado.aguardandoRecuperacao = false;
+              abrirLogin();
+              if (el['retorno-login']) {
+                el['retorno-login'].textContent =
+                  'O link expirou ou não pôde ser validado. Solicite um novo link de recuperação.';
+              }
+              resolve();
+            })
+            .catch(function (erro) {
+              console.error('[Auth] erro ao validar recuperação:', erro);
+
+              if (tentativas < 20) {
+                setTimeout(verificar, 250);
+                return;
+              }
+
+              estado.aguardandoRecuperacao = false;
+              abrirLogin();
+              resolve();
+            });
+        }
+
+        verificar();
+      });
+    }
+
+    return Promise.resolve(Auth.sessao())
+      .then(function (usuario) {
+        if (!usuario) {
+          abrirLogin();
+          return;
+        }
+
+        estado.email = usuario.email || null;
+        return entrarComSessao(estado.email);
+      })
+      .catch(function (erro) {
+        console.error('[Auth] erro ao recuperar sessão:', erro);
         abrirLogin();
-        return;
-      }
-
-      estado.email =
-        usuario.email || null;
-
-      return entrarComSessao(
-        estado.email
-      );
-
-    })
-    .catch(function (erro) {
-
-      console.error(
-        '[Auth] erro ao recuperar sessão:',
-        erro
-      );
-
-      abrirLogin();
-
-    });
-
+      });
   }
 
   function iniciar() {
@@ -2685,6 +2830,7 @@ function listarPastaStorage(pasta, token, offset) {
     iniciarLogin();
     iniciarRecuperacao();
     iniciarRedefinicao();
+    iniciarRecuperacaoSupabase();
     iniciarBotoesNegado();
     iniciarRotas();
     iniciarSairSidebar();
