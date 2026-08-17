@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#FBF3ED">
+<title>Sticker Pro Premium · Área de membros</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,450;9..144,560;9..144,650&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="assets/styles.css">
+
+<style id="stickerpro-login-premium">
+  :root {
+    --sp-bg: #fbf3ed;
+    --sp-card: #ffffff;
+    --sp-text: #241a17;
+    --sp-muted: #8b756b;
+    --sp-line: #ead9cf;
+    --sp-accent: #e05278;
+    --sp-accent-dark: #ca3f65;
+    --sp-gold-bg: #f6e5bd;
+    --sp-gold: #93621c;
+  }
+
+  body {
+    background:
+      radial-gradient(circle at 8% 50%, rgba(242, 198, 183, .18) 0 115px, transparent 116px),
+      radial-gradient(circle at 94% 78%, rgba(246, 221, 198, .22) 0 135px, transparent 136px),
+      var(--sp-bg);
+  }
+
+  .login-tela-premium {
+    min-height: 100vh;
+    min-height: 100svh;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 34px 18px;
+    background: transparent;
+  }
+
+  .login-cartao-premium {
+    width: min(100%, 500px);
+    box-sizing: border-box;
+    background: rgba(255,255,255,.98);
+    border: 1px solid rgba(151, 116, 96, .16);
+    border-radius: 30px;
+    padding: 42px 46px 32px;
+    box-shadow: 0 24px 60px rgba(92, 57, 43, .11);
+  }
+
+  .login-marca-premium {
+    font-family: Fraunces, Georgia, serif;
+    color: var(--sp-text);
+    font-size: clamp(30px, 6vw, 40px);
+    font-weight: 650;
+    line-height: 1.05;
+    letter-spacing: -.025em;
+    margin-bottom: 16px;
+  }
+
+  .login-selo-premium {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--sp-gold-bg);
+    color: var(--sp-gold);
+    border-radius: 999px;
+    padding: 8px 17px;
+    font-size: 12px;
+    line-height: 1;
+    font-weight: 800;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+  }
+
+  .selo-icone {
+    font-size: 14px;
+    line-height: 1;
+  }
+
+  .login-titulo-premium {
+    font-family: Fraunces, Georgia, serif;
+    color: var(--sp-text);
+    font-size: clamp(32px, 6vw, 46px);
+    line-height: 1.05;
+    letter-spacing: -.025em;
+    margin: 28px 0 10px;
+  }
+
+  .login-sub-premium {
+    color: var(--sp-muted);
+    font-size: 16px;
+    line-height: 1.55;
+    margin: 0 0 30px;
+  }
+
+  .campo-premium {
+    margin-bottom: 22px;
+  }
+
+  .campo-premium > label {
+    display: block;
+    color: #6e5a51;
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 9px;
+  }
+
+  .input-premium-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+
+  .input-premium-wrap input {
+    width: 100%;
+    box-sizing: border-box;
+    height: 62px;
+    border: 1.5px solid #e7d3c8;
+    border-radius: 17px;
+    background: #fffdfb;
+    color: #4d3d36;
+    font-size: 17px;
+    padding: 0 48px 0 58px;
+    outline: none;
+    transition: border-color .18s, box-shadow .18s;
+  }
+
+  .input-premium-wrap input:focus {
+    border-color: rgba(224,82,120,.7);
+    box-shadow: 0 0 0 4px rgba(224,82,120,.09);
+  }
+
+  .input-icone {
+    position: absolute;
+    left: 18px;
+    width: 34px;
+    height: 34px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: #fff7f2;
+    color: #a88978;
+    font-size: 17px;
+    z-index: 1;
+  }
+
+  .mostrar-senha {
+    position: absolute;
+    right: 13px;
+    border: 0;
+    background: transparent;
+    color: #a88978;
+    font-size: 19px;
+    cursor: pointer;
+    padding: 9px;
+  }
+
+  .primeiro-acesso-card {
+    position: relative;
+    text-align: center;
+    margin: 8px 0 24px;
+    padding: 42px 18px 20px;
+    border: 1px solid #f1d8c8;
+    border-radius: 21px;
+    background: linear-gradient(180deg, #fffaf5 0%, #fffdfb 100%);
+  }
+
+  .primeiro-acesso-icone {
+    position: absolute;
+    top: -26px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 52px;
+    height: 52px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: #fff0ea;
+    border: 5px solid #fff;
+    color: var(--sp-accent);
+    font-size: 23px;
+    box-shadow: 0 8px 22px rgba(180, 103, 77, .12);
+  }
+
+  .primeiro-acesso-titulo {
+    color: var(--sp-text);
+    font-family: Fraunces, Georgia, serif;
+    font-size: 27px;
+    font-weight: 650;
+    margin-bottom: 8px;
+  }
+
+  .primeiro-acesso-sub {
+    color: var(--sp-muted);
+    font-size: 15px;
+    margin-bottom: 5px;
+  }
+
+  .primeiro-acesso-instrucao {
+    color: var(--sp-accent);
+    font-size: 16px;
+    font-weight: 800;
+    margin-bottom: 17px;
+  }
+
+  .criar-senha-link {
+    min-height: 58px;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    position: relative;
+    border: 1.5px dashed rgba(224,82,120,.58);
+    border-radius: 16px;
+    background: #fff;
+    color: var(--sp-accent);
+    text-decoration: none;
+    font-size: 17px;
+    font-weight: 800;
+    transition: transform .18s, box-shadow .18s, background .18s;
+  }
+
+  .criar-senha-link:hover {
+    transform: translateY(-1px);
+    background: #fff9fb;
+    box-shadow: 0 10px 24px rgba(224,82,120,.11);
+  }
+
+  .criar-senha-icone {
+    font-size: 24px;
+    line-height: 1;
+  }
+
+  .criar-senha-seta {
+    position: absolute;
+    right: 18px;
+    font-size: 30px;
+    font-weight: 400;
+    line-height: 1;
+  }
+
+  .login-suporte-premium {
+    text-align: center;
+    margin: 0 0 25px;
+    padding: 0 5px;
+  }
+
+  .suporte-titulo {
+    color: #6d594f;
+    font-size: 15px;
+    font-weight: 800;
+    margin-bottom: 4px;
+  }
+
+  .suporte-texto {
+    color: var(--sp-muted);
+    font-size: 14px;
+    line-height: 1.45;
+  }
+
+  .suporte-email {
+    display: inline-block;
+    color: var(--sp-accent);
+    font-size: 14px;
+    font-weight: 700;
+    margin-top: 2px;
+    text-decoration: none;
+  }
+
+  .btn-entrar-premium {
+    min-height: 60px;
+    border-radius: 18px !important;
+    font-size: 17px !important;
+    font-weight: 800 !important;
+    box-shadow: 0 13px 25px rgba(224,82,120,.22);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+  }
+
+  .btn-entrar-premium span {
+    font-size: 24px;
+    line-height: 1;
+  }
+
+  .dados-protegidos {
+    text-align: center;
+    color: #927b6f;
+    font-size: 13px;
+    margin-top: 25px;
+  }
+
+  .dados-protegidos span {
+    font-size: 18px;
+    margin-right: 5px;
+  }
+
+  @media (max-width: 560px) {
+    .login-tela-premium {
+      padding: 20px 12px;
+      align-items: center;
+    }
+
+    .login-cartao-premium {
+      border-radius: 27px;
+      padding: 34px 20px 27px;
+    }
+
+    .login-marca-premium {
+      font-size: 31px;
+    }
+
+    .login-titulo-premium {
+      font-size: 34px;
+      margin-top: 25px;
+    }
+
+    .login-sub-premium {
+      font-size: 15px;
+      margin-bottom: 26px;
+    }
+
+    .primeiro-acesso-card {
+      padding-left: 13px;
+      padding-right: 13px;
+    }
+
+    .criar-senha-link {
+      font-size: 16px;
+    }
+  }
+</style>
+
+</head>
+<body>
+
+<!-- ============ SPLASH (enquanto a sessão é verificada) ============ -->
+<div class="splash" id="splash">
+  <div class="splash-marca">Sticker Pro ✨</div>
+  <span class="spinner spinner-grande" aria-label="Carregando"></span>
+</div>
+
+<!-- ============ LOGIN ============ -->
+<div class="login-tela login-tela-premium" id="tela-login" style="display:none;">
+  <div class="login-cartao login-cartao-premium">
+
+    <div class="login-marca login-marca-premium">
+      Sticker Pro <span aria-hidden="true">✨</span>
+    </div>
+
+    <span class="login-selo login-selo-premium">
+      <span class="selo-icone" aria-hidden="true">♙</span>
+      ÁREA DE MEMBROS
+    </span>
+
+    <h1 class="login-titulo login-titulo-premium">Entre na sua conta</h1>
+    <p class="login-sub login-sub-premium">Use o e-mail que você cadastrou na compra.</p>
+
+    <form id="form-login" novalidate>
+
+      <div class="campo campo-premium">
+        <label for="email">E-mail</label>
+        <div class="input-premium-wrap">
+          <span class="input-icone" aria-hidden="true">✉</span>
+          <input type="email" id="email" name="email" autocomplete="email"
+                 inputmode="email" autocapitalize="none" spellcheck="false"
+                 placeholder="voce@email.com">
+        </div>
+      </div>
+
+      <div class="campo campo-premium">
+        <label for="senha">Senha</label>
+        <div class="input-premium-wrap">
+          <span class="input-icone" aria-hidden="true">♙</span>
+          <input type="password" id="senha" name="senha" autocomplete="current-password"
+                 placeholder="Sua senha">
+          <button class="mostrar-senha" type="button" id="btn-mostrar-senha"
+                  aria-label="Mostrar senha" title="Mostrar senha">◉</button>
+        </div>
+      </div>
+
+      <div class="primeiro-acesso-card">
+        <div class="primeiro-acesso-icone" aria-hidden="true">✦</div>
+
+        <div class="primeiro-acesso-titulo">Primeiro acesso?</div>
+
+        <div class="primeiro-acesso-sub">
+          Sua senha ainda não foi criada.
+        </div>
+
+        <div class="primeiro-acesso-instrucao">
+          Clique abaixo para criar sua senha.
+        </div>
+
+        <a class="criar-senha-link" href="#" id="link-recuperar">
+          <span class="criar-senha-icone" aria-hidden="true">⚿</span>
+          <span>Criar minha senha</span>
+          <span class="criar-senha-seta" aria-hidden="true">›</span>
+        </a>
+      </div>
+
+      <div class="login-suporte-premium">
+        <div class="suporte-titulo">Problemas para acessar?</div>
+        <div class="suporte-texto">
+          Entre em contato pelo e-mail
+        </div>
+        <a href="mailto:suportestickerpro@gmail.com" class="suporte-email">
+          supportestickerpro@gmail.com
+        </a>
+      </div>
+
+      <button class="btn btn-primary btn-block btn-entrar btn-entrar-premium"
+              type="submit" id="btn-entrar">
+        <span aria-hidden="true">↪</span>
+        Entrar
+      </button>
+
+      <div class="dados-protegidos">
+        <span aria-hidden="true">♢</span>
+        Seus dados estão protegidos.
+      </div>
+    </form>
+  </div>
+
+  <div class="selo-demo" id="selo-demo" style="display:none;"></div>
+</div>
+
+<!-- ============ RECUPERAR ACESSO ============ -->
+<div class="login-tela" id="tela-recuperacao" style="display:none;">
+  <div class="login-cartao">
+    <div class="login-marca">Sticker Pro ✨</div>
+    <span class="login-selo">Área de membros</span>
+
+    <h1 class="login-titulo">Recuperar acesso</h1>
+    <p class="login-sub">
+      Digite o e-mail usado na sua compra para receber o link e criar sua senha.
+    </p>
+
+    <form id="form-recuperacao" novalidate>
+      <div class="campo">
+        <label for="email-recuperacao">E-mail</label>
+        <input
+          type="email"
+          id="email-recuperacao"
+          name="email-recuperacao"
+          autocomplete="email"
+          inputmode="email"
+          autocapitalize="none"
+          spellcheck="false"
+          placeholder="voce@email.com">
+      </div>
+
+      <div id="retorno-recuperacao" aria-live="polite"></div>
+
+      <button
+        class="btn btn-primary btn-block btn-entrar"
+        type="submit"
+        id="btn-recuperacao">
+        Enviar link para criar minha senha
+      </button>
+    </form>
+
+    <a class="login-link" href="#" id="retorno-recuperacao-login">
+      Voltar para o login
+    </a>
+  </div>
+</div>
+
+<!-- ============ REDEFINIR SENHA ============ -->
+<div class="login-tela" id="tela-redefinir" style="display:none;">
+  <div class="login-cartao">
+    <div class="login-marca">Sticker Pro ✨</div>
+    <h1 class="login-titulo">Criar nova senha</h1>
+    <p class="login-sub">Escolha uma senha com pelo menos 6 caracteres.</p>
+
+    <form id="form-redefinir" novalidate>
+      <div class="campo">
+        <label for="nova-senha">Nova senha</label>
+        <input type="password" id="nova-senha" autocomplete="new-password" placeholder="Nova senha">
+      </div>
+      <div id="retorno-redefinir" aria-live="polite"></div>
+      <button class="btn btn-primary btn-block btn-entrar" type="submit" id="btn-redefinir">Salvar nova senha</button>
+    </form>
+
+    <a class="login-link" href="#/">Voltar para o login</a>
+  </div>
+</div>
+
+<!-- ============ ACESSO NÃO LIBERADO ============ -->
+<div class="login-tela" id="tela-negado" style="display:none;">
+  <div class="login-cartao">
+    <div class="login-marca">Sticker Pro ✨</div>
+    <span class="login-selo">Área de membros</span>
+
+    <h1 class="login-titulo">Seu acesso ainda não está liberado.</h1>
+    <p class="login-sub" id="negado-msg">Não encontramos um acesso Premium ativo para esta conta.</p>
+
+    <div class="aviso aviso-info negado-aviso">
+      Se você acabou de realizar a compra, aguarde a confirmação do pagamento e tente novamente.
+    </div>
+
+    <p class="negado-conta">Conta: <span id="negado-email"></span></p>
+
+    <button class="btn btn-primary btn-block" type="button" id="btn-negado-tentar">Tentar novamente</button>
+    <button class="btn btn-ghost btn-block negado-sair" type="button" id="btn-negado-sair">Sair</button>
+  </div>
+</div>
+
+<!-- ============ TRAVA DE PUBLICAÇÃO (modo demonstração) ============ -->
+<div class="login-tela" id="tela-bloqueio" style="display:none;">
+  <div class="login-cartao">
+    <div class="login-marca">Sticker Pro ✨</div>
+    <span class="login-selo bloqueio-selo">Não configurado</span>
+
+    <h1 class="login-titulo">Área ainda não configurada.</h1>
+    <p class="login-sub">
+      Esta área está em modo demonstração, que não protege o conteúdo, e por isso
+      não abre em um endereço publicado.
+    </p>
+    <div class="aviso aviso-erro negado-aviso">
+      Configure <b>supabaseUrl</b> e <b>supabaseAnonKey</b> em <b>assets/config.js</b>
+      para liberar o acesso. Instruções em COMO-USAR.md.
+    </div>
+  </div>
+</div>
+
+<!-- ============ APP ============ -->
+<div class="app" id="app">
+
+  <header class="topbar">
+    <a class="topbar-marca" href="#/inicio">Sticker Pro <span aria-hidden="true">✨</span></a>
+    <span class="topbar-plano">Premium</span>
+    <nav class="nav" id="nav" aria-label="Menu principal"></nav>
+  </header>
+
+  <main class="conteudo" id="conteudo"></main>
+
+  <nav class="bottombar" aria-label="Menu">
+    <div class="bottombar-grade" id="tabs"></div>
+  </nav>
+</div>
+
+<!-- SDK do Supabase (login real ativado) -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<!-- Ordem obrigatória -->
+<script src="assets/config.js"></script>
+<script src="assets/content.js"></script>
+<script src="assets/auth.js"></script>
+<script src="assets/dados.js"></script>
+<script src="assets/app.js"></script>
+
+<script>
+(function () {
+  var btn = document.getElementById('btn-mostrar-senha');
+  var input = document.getElementById('senha');
+  if (btn && input) {
+    btn.addEventListener('click', function () {
+      var mostrar = input.type === 'password';
+      input.type = mostrar ? 'text' : 'password';
+      btn.textContent = mostrar ? '◉' : '◉';
+      btn.setAttribute('aria-label', mostrar ? 'Ocultar senha' : 'Mostrar senha');
+      btn.setAttribute('title', mostrar ? 'Ocultar senha' : 'Mostrar senha');
+    });
+  }
+})();
+</script>
+
+</body>
+</html>
