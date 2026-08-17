@@ -2642,7 +2642,15 @@ function listarPastaStorage(pasta, token, offset) {
             'Salvando nova senha...';
         }
 
-        Promise.resolve(Auth.definirSenha(novaSenha))
+        /*
+         * Antes de alterar a senha, garantimos que o link de recuperação
+         * realmente virou uma sessão do Supabase. Isso é importante no
+         * fluxo PKCE: a tela pode abrir antes da troca do ?code= terminar.
+         */
+        prepararSessaoRecuperacao()
+          .then(function () {
+            return Auth.definirSenha(novaSenha);
+          })
           .then(function (resultado) {
             /* auth.js devolve {ok:false, erro:...} em vez de rejeitar
                em alguns erros. O app precisa respeitar esse retorno. */
@@ -2736,6 +2744,91 @@ function listarPastaStorage(pasta, token, offset) {
     }
   }
 
+  /*
+   * Garante a sessão do fluxo de recuperação.
+   *
+   * O auth.js já usa PKCE e detectSessionInUrl, mas em alguns celulares
+   * o app pode chegar à tela de redefinição antes de a troca do ?code=
+   * terminar. Aqui fazemos uma segunda verificação segura:
+   *   1) se já existe sessão, usa a sessão atual;
+   *   2) se não existe e há ?code=, troca o código por sessão;
+   *   3) depois confirma novamente a sessão pelo Auth.
+   *
+   * Não altera login normal nem cria outra conta.
+   */
+  var _clienteRecuperacao = null;
+
+  function prepararSessaoRecuperacao() {
+    return Promise.resolve(Auth.sessao())
+      .then(function (usuario) {
+        if (usuario) return usuario;
+
+        if (!temCodigoDeRecuperacao()) {
+          throw new Error('Sessão de recuperação não encontrada. Peça um novo link.');
+        }
+
+        if (!window.supabase || !window.supabase.createClient) {
+          throw new Error('Não foi possível validar o link de recuperação.');
+        }
+
+        var cfg = window.STICKER_CONFIG || {};
+
+        if (!cfg.supabaseUrl || !cfg.supabaseAnonKey) {
+          throw new Error('Supabase não configurado.');
+        }
+
+        if (!_clienteRecuperacao) {
+          _clienteRecuperacao = window.supabase.createClient(
+            cfg.supabaseUrl,
+            cfg.supabaseAnonKey,
+            {
+              auth: {
+                persistSession: true,
+                autoRefreshToken: true,
+                detectSessionInUrl: true,
+                flowType: 'pkce'
+              }
+            }
+          );
+        }
+
+        var params = new URLSearchParams(window.location.search || '');
+        var code = params.get('code');
+
+        if (!code) {
+          throw new Error('Link de recuperação inválido ou expirado.');
+        }
+
+        return _clienteRecuperacao.auth.exchangeCodeForSession(code)
+          .then(function (resultado) {
+            if (resultado.error) {
+              console.error('[Recuperação] exchangeCodeForSession:', resultado.error);
+              throw new Error('O link de recuperação não pôde ser validado. Peça um novo link.');
+            }
+
+            var sessao = resultado.data && resultado.data.session;
+            if (!sessao) {
+              throw new Error('Não foi possível iniciar a sessão de recuperação. Peça um novo link.');
+            }
+
+            return sessao;
+          });
+      })
+      .then(function () {
+        return Auth.sessao();
+      })
+      .then(function (usuario) {
+        if (!usuario) {
+          throw new Error('Sessão de recuperação não encontrada. Peça um novo link.');
+        }
+
+        estado.email = usuario.email || estado.email;
+        estado.recuperacaoSenha = true;
+        estado.aguardandoRecuperacao = false;
+        return usuario;
+      });
+  }
+
   function iniciarBotoesNegado() {
 
     if (el['btn-negado-sair']) {
@@ -2819,31 +2912,12 @@ function listarPastaStorage(pasta, token, offset) {
         function verificar() {
           tentativas++;
 
-          Promise.resolve(Auth.sessao())
+          prepararSessaoRecuperacao()
             .then(function (usuario) {
-              if (usuario) {
-                estado.email = usuario.email || null;
-                estado.recuperacaoSenha = true;
-                estado.aguardandoRecuperacao = false;
-                abrirRedefinicaoSenha(
-                  'Escolha uma nova senha para acessar sua conta.'
-                );
-                resolve();
-                return;
-              }
-
-              if (tentativas < 20) {
-                setTimeout(verificar, 250);
-                return;
-              }
-
-              estado.aguardandoRecuperacao = false;
-              abrirLogin();
-              if (el['retorno-login']) {
-                el['retorno-login'].textContent =
-                  'O link expirou ou não pôde ser validado. Solicite um novo link de recuperação.';
-              }
-              resolve();
+              abrirRedefinicaoSenha(
+                'Escolha uma nova senha para acessar sua conta.'
+              );
+              resolve(usuario);
             })
             .catch(function (erro) {
               console.error('[Auth] erro ao validar recuperação:', erro);
@@ -2855,6 +2929,11 @@ function listarPastaStorage(pasta, token, offset) {
 
               estado.aguardandoRecuperacao = false;
               abrirLogin();
+              if (el['retorno-login']) {
+                el['retorno-login'].textContent =
+                  erro.message ||
+                  'O link expirou ou não pôde ser validado. Solicite um novo link de recuperação.';
+              }
               resolve();
             });
         }
