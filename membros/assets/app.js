@@ -25,6 +25,8 @@
   var el = {};
   ['splash','tela-login','app','conteudo','nav','tabs','form-login','email','senha',
    'btn-entrar','link-recuperar','retorno-login','selo-demo','btn-sair-sidebar',
+   'tela-recuperacao','form-recuperacao','email-recuperacao','btn-recuperacao',
+   'retorno-recuperacao','retorno-recuperacao-login',
    'form-redefinir','nova-senha','btn-redefinir','retorno-redefinir','tela-redefinir',
    'tela-negado','negado-email','btn-negado-sair','btn-negado-tentar',
    'tela-bloqueio'
@@ -2177,7 +2179,9 @@ function listarPastaStorage(pasta, token, offset) {
   function mostrarApp() {
     esconder(el['splash']);
     esconder(el['tela-login']);
+        esconder(el['tela-recuperacao']);
     esconder(el['tela-redefinir']);
+        esconder(el['tela-recuperacao']);
     esconder(el['tela-negado']);
     esconder(el['tela-bloqueio']);
 
@@ -2191,6 +2195,7 @@ function listarPastaStorage(pasta, token, offset) {
     esconder(el['splash']);
     esconder(el['app']);
     esconder(el['tela-redefinir']);
+        esconder(el['tela-recuperacao']);
     esconder(el['tela-negado']);
     esconder(el['tela-bloqueio']);
 
@@ -2205,6 +2210,7 @@ function listarPastaStorage(pasta, token, offset) {
     esconder(el['splash']);
     esconder(el['app']);
     esconder(el['tela-login']);
+        esconder(el['tela-recuperacao']);
     esconder(el['tela-redefinir']);
     esconder(el['tela-bloqueio']);
 
@@ -2220,7 +2226,9 @@ function listarPastaStorage(pasta, token, offset) {
     esconder(el['splash']);
     esconder(el['app']);
     esconder(el['tela-login']);
+        esconder(el['tela-recuperacao']);
     esconder(el['tela-redefinir']);
+        esconder(el['tela-recuperacao']);
     esconder(el['tela-negado']);
 
     mostrar(el['tela-bloqueio']);
@@ -2476,64 +2484,110 @@ function listarPastaStorage(pasta, token, offset) {
     );
   }
 
+  function abrirRecuperacao(emailInicial) {
+    esconder(el['splash']);
+    esconder(el['app']);
+    esconder(el['tela-login']);
+        esconder(el['tela-recuperacao']);
+    esconder(el['tela-redefinir']);
+        esconder(el['tela-recuperacao']);
+    esconder(el['tela-negado']);
+    esconder(el['tela-bloqueio']);
+
+    mostrar(el['tela-recuperacao']);
+
+    if (el['retorno-recuperacao']) {
+      el['retorno-recuperacao'].textContent = '';
+    }
+
+    if (el['email-recuperacao']) {
+      el['email-recuperacao'].value = emailInicial || (el['email'] ? el['email'].value.trim() : '');
+      setTimeout(function () {
+        el['email-recuperacao'].focus();
+      }, 50);
+    }
+  }
+
   function iniciarRecuperacao() {
-    if (!el['link-recuperar']) {
+    if (el['link-recuperar']) {
+      el['link-recuperar'].addEventListener('click', function (evento) {
+        evento.preventDefault();
+        abrirRecuperacao(el['email'] ? el['email'].value.trim().toLowerCase() : '');
+      });
+    }
+
+    if (el['retorno-recuperacao-login']) {
+      el['retorno-recuperacao-login'].addEventListener('click', function (evento) {
+        evento.preventDefault();
+        abrirLogin();
+      });
+    }
+
+    if (!el['form-recuperacao']) {
       return;
     }
 
-    el['link-recuperar'].addEventListener(
-      'click',
-      function (evento) {
-        evento.preventDefault();
+    el['form-recuperacao'].addEventListener('submit', function (evento) {
+      evento.preventDefault();
 
-        var email = el['email']
-          ? el['email'].value.trim().toLowerCase()
-          : '';
+      var email = el['email-recuperacao']
+        ? el['email-recuperacao'].value.trim().toLowerCase()
+        : '';
 
-        if (!email) {
-          if (el['retorno-login']) {
-            el['retorno-login'].textContent =
-              'Digite primeiro o e-mail usado na compra para receber o link de acesso.';
-          }
-          if (el['email']) el['email'].focus();
-          return;
+      if (!email || email.indexOf('@') < 0) {
+        if (el['retorno-recuperacao']) {
+          el['retorno-recuperacao'].textContent =
+            'Digite o e-mail usado na compra.';
         }
-
-        if (el['retorno-login']) {
-          el['retorno-login'].textContent = 'Enviando link para seu e-mail...';
+        if (el['email-recuperacao']) {
+          el['email-recuperacao'].focus();
         }
-
-        Promise.resolve(Auth.recuperarSenha(email))
-          .then(function (resultado) {
-            if (!resultado || resultado.ok === false) {
-              throw new Error(
-                resultado && resultado.erro
-                  ? resultado.erro
-                  : 'Não foi possível enviar o link.'
-              );
-            }
-
-            esconder(el['tela-login']);
-            mostrar(el['tela-redefinir']);
-
-            if (el['retorno-redefinir']) {
-              el['retorno-redefinir'].textContent =
-                'Link enviado para ' + email + '. Abra o e-mail e toque no link para escolher sua senha.';
-            }
-
-            if (el['nova-senha']) {
-              el['nova-senha'].value = '';
-            }
-          })
-          .catch(function (erro) {
-            console.error('[Recuperação] erro:', erro);
-            if (el['retorno-login']) {
-              el['retorno-login'].textContent =
-                erro.message || 'Não foi possível enviar o link. Tente novamente.';
-            }
-          });
+        return;
       }
-    );
+
+      if (el['btn-recuperacao']) {
+        el['btn-recuperacao'].disabled = true;
+      }
+
+      if (el['retorno-recuperacao']) {
+        el['retorno-recuperacao'].textContent =
+          'Enviando link para seu e-mail...';
+      }
+
+      Promise.resolve(Auth.recuperarSenha(email))
+        .then(function (resultado) {
+          if (!resultado || resultado.ok === false) {
+            throw new Error(
+              resultado && resultado.erro
+                ? resultado.erro
+                : 'Não foi possível enviar o link.'
+            );
+          }
+
+          if (el['retorno-recuperacao']) {
+            el['retorno-recuperacao'].textContent =
+              'Link enviado! Verifique seu e-mail e clique no link para criar sua senha.';
+          }
+
+          if (el['btn-recuperacao']) {
+            el['btn-recuperacao'].textContent = 'Link enviado';
+          }
+        })
+        .catch(function (erro) {
+          console.error('[Recuperação] erro:', erro);
+
+          if (el['retorno-recuperacao']) {
+            el['retorno-recuperacao'].textContent =
+              erro.message ||
+              'Não foi possível enviar o link. Tente novamente.';
+          }
+        })
+        .finally(function () {
+          if (el['btn-recuperacao']) {
+            el['btn-recuperacao'].disabled = false;
+          }
+        });
+    });
   }
 
   function abrirRedefinicaoSenha(mensagem) {
