@@ -2756,77 +2756,55 @@ function listarPastaStorage(pasta, token, offset) {
    *
    * Não altera login normal nem cria outra conta.
    */
-  var _clienteRecuperacao = null;
-
+  /*
+   * Garante a sessão do fluxo de recuperação.
+   *
+   * IMPORTANTE: o auth.js já cria o ÚNICO cliente Supabase da aplicação
+   * com detectSessionInUrl + PKCE. Portanto, NÃO trocamos o ?code= aqui
+   * novamente. O mesmo código PKCE não deve ser consumido por um segundo
+   * cliente, pois a troca é de uso único.
+   *
+   * Se a tela abrir antes da sessão ficar pronta, apenas aguardamos alguns
+   * instantes e consultamos Auth.sessao() novamente.
+   */
   function prepararSessaoRecuperacao() {
-    return Promise.resolve(Auth.sessao())
-      .then(function (usuario) {
-        if (usuario) return usuario;
+    var tentativas = 0;
+    var maxTentativas = 20;
+    var intervalo = 250;
 
-        if (!temCodigoDeRecuperacao()) {
-          throw new Error('Sessão de recuperação não encontrada. Peça um novo link.');
-        }
+    function verificar() {
+      return Promise.resolve(Auth.sessao())
+        .then(function (usuario) {
+          if (usuario) {
+            estado.email = usuario.email || estado.email;
+            estado.recuperacaoSenha = true;
+            estado.aguardandoRecuperacao = false;
+            return usuario;
+          }
 
-        if (!window.supabase || !window.supabase.createClient) {
-          throw new Error('Não foi possível validar o link de recuperação.');
-        }
+          if (!temCodigoDeRecuperacao()) {
+            throw new Error(
+              'Sessão de recuperação não encontrada. Peça um novo link.'
+            );
+          }
 
-        var cfg = window.STICKER_CONFIG || {};
+          tentativas++;
 
-        if (!cfg.supabaseUrl || !cfg.supabaseAnonKey) {
-          throw new Error('Supabase não configurado.');
-        }
+          if (tentativas >= maxTentativas) {
+            throw new Error(
+              'Não foi possível validar o link de recuperação. Peça um novo link.'
+            );
+          }
 
-        if (!_clienteRecuperacao) {
-          _clienteRecuperacao = window.supabase.createClient(
-            cfg.supabaseUrl,
-            cfg.supabaseAnonKey,
-            {
-              auth: {
-                persistSession: true,
-                autoRefreshToken: true,
-                detectSessionInUrl: true,
-                flowType: 'pkce'
-              }
-            }
-          );
-        }
-
-        var params = new URLSearchParams(window.location.search || '');
-        var code = params.get('code');
-
-        if (!code) {
-          throw new Error('Link de recuperação inválido ou expirado.');
-        }
-
-        return _clienteRecuperacao.auth.exchangeCodeForSession(code)
-          .then(function (resultado) {
-            if (resultado.error) {
-              console.error('[Recuperação] exchangeCodeForSession:', resultado.error);
-              throw new Error('O link de recuperação não pôde ser validado. Peça um novo link.');
-            }
-
-            var sessao = resultado.data && resultado.data.session;
-            if (!sessao) {
-              throw new Error('Não foi possível iniciar a sessão de recuperação. Peça um novo link.');
-            }
-
-            return sessao;
+          return new Promise(function (resolve) {
+            setTimeout(function () {
+              resolve(verificar());
+            }, intervalo);
           });
-      })
-      .then(function () {
-        return Auth.sessao();
-      })
-      .then(function (usuario) {
-        if (!usuario) {
-          throw new Error('Sessão de recuperação não encontrada. Peça um novo link.');
-        }
+        });
+    }
 
-        estado.email = usuario.email || estado.email;
-        estado.recuperacaoSenha = true;
-        estado.aguardandoRecuperacao = false;
-        return usuario;
-      });
+    return verificar();
   }
 
   function iniciarBotoesNegado() {
