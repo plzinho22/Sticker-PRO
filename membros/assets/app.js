@@ -2724,7 +2724,7 @@ function listarPastaStorage(pasta, token, offset) {
 
       /* Alguns fluxos PKCE entregam primeiro SIGNED_IN. Se a URL
          ainda tiver ?code=, tratamos esse login como recuperação. */
-      if (evento === 'SIGNED_IN' && sessao && temCodigoDeRecuperacao()) {
+      if (evento === 'SIGNED_IN' && sessao && temRecuperacao()) {
         estado.recuperacaoSenha = true;
         estado.aguardandoRecuperacao = false;
         estado.email = sessao.email || estado.email;
@@ -2741,6 +2741,38 @@ function listarPastaStorage(pasta, token, offset) {
       return !!params.get('code');
     } catch (e) {
       return false;
+    }
+  }
+
+  function temTokenDeRecuperacao() {
+    try {
+      var hash = String(window.location.hash || '');
+      var params = new URLSearchParams(hash.replace(/^#/, ''));
+      return params.get('type') === 'recovery' && !!params.get('access_token');
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function temRecuperacao() {
+    return temCodigoDeRecuperacao() || temTokenDeRecuperacao();
+  }
+
+  function limparRetornoDeRecuperacao() {
+    try {
+      var url = new URL(window.location.href);
+      url.searchParams.delete('code');
+      url.searchParams.delete('type');
+      url.searchParams.delete('access_token');
+      url.searchParams.delete('refresh_token');
+      url.searchParams.delete('expires_in');
+      url.searchParams.delete('expires_at');
+      url.searchParams.delete('token_type');
+      window.history.replaceState({}, document.title, url.pathname + url.search);
+    } catch (e) {
+      try {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      } catch (ignore) {}
     }
   }
 
@@ -2769,7 +2801,7 @@ function listarPastaStorage(pasta, token, offset) {
    */
   function prepararSessaoRecuperacao() {
     var tentativas = 0;
-    var maxTentativas = 80; // até ~20 segundos
+    var maxTentativas = 40; // até ~10 segundos
 
     function verificar() {
       return Promise.resolve(Auth.sessao())
@@ -2778,6 +2810,7 @@ function listarPastaStorage(pasta, token, offset) {
             estado.email = usuario.email || estado.email;
             estado.recuperacaoSenha = true;
             estado.aguardandoRecuperacao = false;
+            limparRetornoDeRecuperacao();
             return usuario;
           }
 
@@ -2870,10 +2903,9 @@ function listarPastaStorage(pasta, token, offset) {
   function iniciarSessao() {
 
     /* Quando o usuário chega pelo link de recuperação, o Supabase
-       pode ainda estar trocando ?code=... pela sessão. Não podemos
-       abrir o login nesse intervalo, senão a tela de redefinição
-       desaparece antes do evento PASSWORD_RECOVERY. */
-    if (temCodigoDeRecuperacao()) {
+       pode ainda estar transformando o retorno do e-mail em sessão.
+       Não abrimos o login enquanto esse processo está em andamento. */
+    if (temRecuperacao()) {
       estado.aguardandoRecuperacao = true;
       abrirRedefinicaoSenha('Validando seu link de recuperação...');
 
@@ -2940,28 +2972,13 @@ function listarPastaStorage(pasta, token, offset) {
     iniciarSairSidebar();
     iniciarCopiarFigurinhas();
 
-    /*
-     * PRIMEIRO ACESSO / RECUPERAÇÃO
-     *
-     * Quando a cliente chega pelo e-mail do Supabase, a URL contém
-     * ?code=... e o Auth precisa transformar esse código em sessão.
-     *
-     * IMPORTANTE: não carregamos os dados antes disso. O login normal
-     * continua exatamente igual para quem não veio por um link de
-     * recuperação.
-     */
-    var inicializacao;
-
-    if (temCodigoDeRecuperacao()) {
-      inicializacao = Promise.resolve(iniciarSessao());
-    } else {
-      inicializacao = Promise.resolve(carregarDados())
-        .then(function () {
-          return iniciarSessao();
-        });
-    }
-
-    inicializacao.catch(function (erro) {
+    Promise.resolve(
+      carregarDados()
+    )
+    .then(function () {
+      return iniciarSessao();
+    })
+    .catch(function (erro) {
 
       console.error(
         '[Sticker Pro] erro ao iniciar:',
