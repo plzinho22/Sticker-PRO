@@ -94,10 +94,17 @@
             persistSession: true,
             autoRefreshToken: true,
             detectSessionInUrl: true,
-            // PKCE devolve o código em ?code=... (query), e não no #hash.
-            // Sem isto o token do Supabase disputaria o fragmento com o
-            // roteador da área (#/inicio, #/redefinir).
-            flowType: 'pkce'
+            /*
+             * Este é um SPA/client-only. Para recuperação de senha, o link
+             * pode ser aberto em outro navegador/dispositivo (ex.: o e-mail
+             * abre no navegador do celular). PKCE exigiria o code_verifier
+             * armazenado no navegador que iniciou o pedido.
+             *
+             * No implicit flow, o Supabase devolve a sessão no fragmento
+             * (#access_token=...&type=recovery), que o cliente detecta e
+             * grava automaticamente no localStorage.
+             */
+            flowType: 'implicit'
           }
         });
       }
