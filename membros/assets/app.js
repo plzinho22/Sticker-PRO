@@ -2769,7 +2769,7 @@ function listarPastaStorage(pasta, token, offset) {
    */
   function prepararSessaoRecuperacao() {
     var tentativas = 0;
-    var maxTentativas = 40; // até ~10 segundos
+    var maxTentativas = 80; // até ~20 segundos
 
     function verificar() {
       return Promise.resolve(Auth.sessao())
@@ -2940,13 +2940,28 @@ function listarPastaStorage(pasta, token, offset) {
     iniciarSairSidebar();
     iniciarCopiarFigurinhas();
 
-    Promise.resolve(
-      carregarDados()
-    )
-    .then(function () {
-      return iniciarSessao();
-    })
-    .catch(function (erro) {
+    /*
+     * PRIMEIRO ACESSO / RECUPERAÇÃO
+     *
+     * Quando a cliente chega pelo e-mail do Supabase, a URL contém
+     * ?code=... e o Auth precisa transformar esse código em sessão.
+     *
+     * IMPORTANTE: não carregamos os dados antes disso. O login normal
+     * continua exatamente igual para quem não veio por um link de
+     * recuperação.
+     */
+    var inicializacao;
+
+    if (temCodigoDeRecuperacao()) {
+      inicializacao = Promise.resolve(iniciarSessao());
+    } else {
+      inicializacao = Promise.resolve(carregarDados())
+        .then(function () {
+          return iniciarSessao();
+        });
+    }
+
+    inicializacao.catch(function (erro) {
 
       console.error(
         '[Sticker Pro] erro ao iniciar:',
